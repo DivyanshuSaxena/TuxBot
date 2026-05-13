@@ -1,6 +1,8 @@
 site_name: SemaTune
-site_description: System-wide OS tuning for application targets with direct and proxy metrics
-repo_url: https://github.com/nebula-cu/os-param-tuning
+site_description: SemaTune is a host-side Linux autotuning framework that measures workloads powered by LLMs.
+site_url: https://columbia-dap-lab.github.io/SemaTune/
+repo_url: https://github.com/Columbia-DAP-Lab/SemaTune
+repo_name: Columbia-DAP-Lab/SemaTune
 theme:
   name: material
 nav:
