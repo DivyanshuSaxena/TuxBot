@@ -1,0 +1,21 @@
+{
+  "benchmark": "tpcc",
+  "pin_to_cores": "0-7",
+  "benchbase_jar_path": "deps/benchbase/target/benchbase-postgres/benchbase.jar",
+  "benchbase_config_file": "config/benchbase/postgres/tpcc.xml",
+  "tuner_type": "bayesian",
+  "parameter_ranges": {
+    "min_granularity_ns": [100000, 50000000]
+  },
+  "parameters_to_tune": ["min_granularity_ns"],
+  "fixed_parameters": {},
+  "optimization_metric": "latency_p99",
+  "optimization_goal": "minimize",
+  "max_iterations": 3,
+  "post_tuning_windows": 1,
+  "window_duration": 30,
+  "tuning_mode": "outside-of-window",
+  "results_dir": "results/tpcc_bayesian",
+  "bayesian_n_trials": 20,
+  "bayesian_seed": 42
+}

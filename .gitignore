@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+site/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Generated benchmark output
+results/
+results_*/
+results-old/
+plots/
+plots*/
+logs/
+*.log
+*_metrics.json
+*_perf_stat.txt
+benchbase_windows/
+sysbench_cpu_windows/
+temp_configs/
+
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+openrouter.txt
+secrets/
+*.key
+*.pem
+
+# Large local dependencies/artifacts
+deps/*/target/
+deps/*/build/
+deps/*/out/
+
+# Editor/OS files
+.DS_Store
+.idea/
+.vscode/
+.cursor/
+*.swp
+*~

@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite SemaTune. TODO: replace this placeholder with the final citation before public release."
+title: "TODO: Add publication title"
+authors:
+  - family-names: "TODO"
+    given-names: "TODO"
+version: "0.1.0"
+repository-code: "TODO: Add public repository URL"
+date-released: "2026-05-12"

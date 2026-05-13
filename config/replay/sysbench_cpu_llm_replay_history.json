@@ -1,0 +1,13 @@
+{
+  "history": [
+    {
+      "iteration": 1,
+      "parameters": {
+        "min_granularity_ns": 5000000
+      },
+      "timing_info": {
+        "reasoning_response_duration": 0.0
+      }
+    }
+  ]
+}

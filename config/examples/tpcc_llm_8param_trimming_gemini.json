@@ -1,0 +1,74 @@
+{
+  "benchmark": "tpcc",
+  "pin_to_cores": "0-9",
+  "benchbase_jar_path": "deps/benchbase/target/benchbase-postgres/benchbase.jar",
+  "benchbase_config_file": "config/benchbase/postgres/tpcc.xml",
+  "tuner_type": "llm",
+  "llm_loop": "single",
+  "llm_provider": "gemini",
+  "parameter_ranges": {
+    "min_granularity_ns": [
+      100000,
+      100000000
+    ],
+    "latency_ns": [
+      100000,
+      100000000
+    ],
+    "cstate_max": [
+      "POLL",
+      "C6",
+      "C3",
+      "C1E",
+      "C1"
+    ],
+    "napi_busy_poll": [
+      0,
+      1000
+    ],
+    "wakeup_granularity_ns": [
+      100000,
+      100000000
+    ],
+    "migration_cost_ns": [
+      100000,
+      100000000
+    ],
+    "max_perf_pct": [
+      0,
+      100
+    ],
+    "min_perf_pct": [
+      0,
+      100
+    ]
+  },
+  "parameters_to_tune": [
+    "min_granularity_ns",
+    "latency_ns",
+    "cstate_max",
+    "napi_busy_poll",
+    "wakeup_granularity_ns",
+    "migration_cost_ns",
+    "max_perf_pct",
+    "min_perf_pct"
+  ],
+  "fixed_parameters": {},
+  "optimization_metric": "latency_p99",
+  "optimization_goal": "minimize",
+  "max_iterations": 60,
+  "post_tuning_windows": 20,
+  "window_duration": 10,
+  "continuous_apply": false,
+  "tuning_mode": "outside-of-window",
+  "llm_model_name": "gemini-2.5-flash-lite",
+  "llm_temperature": 0.2,
+  "include_param_descriptions": true,
+  "llm_prompt_mode": "default",
+  "trimming_enabled": true,
+  "trimming_cycles": 5,
+  "trimming_model_name": "gemini-2.5-flash",
+  "trimming_strategy": "single_loop",
+  "trimming_suggest_params": true,
+  "results_dir": "results/tpcc_llm_8param_trimming_gemini"
+}

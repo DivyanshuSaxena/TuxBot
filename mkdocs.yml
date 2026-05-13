@@ -1,0 +1,30 @@
+site_name: SemaTune
+site_description: System-wide OS tuning for application targets with direct and proxy metrics
+repo_url: https://github.com/nebula-cu/os-param-tuning
+theme:
+  name: material
+nav:
+  - Overview: index.md
+  - Quick Start: quick-start.md
+  - Installation: installation.md
+  - Safety and Restore: safety-and-restore.md
+  - How SemaTune Works: how-it-works.md
+  - Included Targets: supported-benchmarks.md
+  - Running Sysbench CPU: running-sysbench-cpu.md
+  - Running TPCC: running-tpcc.md
+  - Configuration Recipes: config-recipes.md
+  - Configuration Reference: configuration.md
+  - OS Parameter Reference: os-parameters.md
+  - Direct and Proxy Metrics: direct-and-proxy-metrics.md
+  - Tuners: tuners.md
+  - LLM Setup: llm-setup.md
+  - LLM Prompt Modes: llm-prompt-modes.md
+  - Dual-Loop LLM: dual-loop.md
+  - LLM Replay: llm-replay.md
+  - Results Format: results-format.md
+  - Reading Results: reading-results.md
+  - Reproducibility: reproducibility.md
+  - Troubleshooting: troubleshooting.md
+  - Extending SemaTune: extending.md
+  - Add a Target Tutorial: add-a-target-tutorial.md
+  - Developer Guide: developer-guide.md

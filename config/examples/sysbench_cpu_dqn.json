@@ -1,0 +1,22 @@
+{
+  "benchmark": "sysbench_cpu",
+  "pin_to_cores": "0-3",
+  "sysbench_threads": 4,
+  "sysbench_cpu_max_prime": 20000,
+  "tuner_type": "dqn",
+  "parameter_ranges": {
+    "min_granularity_ns": [100000, 50000000]
+  },
+  "parameters_to_tune": ["min_granularity_ns"],
+  "fixed_parameters": {},
+  "optimization_metric": "throughput",
+  "optimization_goal": "maximize",
+  "max_iterations": 3,
+  "post_tuning_windows": 1,
+  "window_duration": 10,
+  "tuning_mode": "outside-of-window",
+  "results_dir": "results/sysbench_cpu_dqn",
+  "dqn_grid_points": 8,
+  "dqn_max_actions": 1000,
+  "dqn_seed": 42
+}

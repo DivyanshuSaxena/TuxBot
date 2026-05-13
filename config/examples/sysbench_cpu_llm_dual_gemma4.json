@@ -1,0 +1,33 @@
+{
+  "benchmark": "sysbench_cpu",
+  "pin_to_cores": "0-3",
+  "sysbench_threads": 4,
+  "sysbench_cpu_max_prime": 20000,
+  "tuner_type": "llm",
+  "llm_loop": "dual",
+  "llm_provider": "gemini",
+  "llm_prompt_mode": "default",
+  "parameter_ranges": {
+    "min_granularity_ns": [
+      100000,
+      50000000
+    ]
+  },
+  "parameters_to_tune": [
+    "min_granularity_ns"
+  ],
+  "fixed_parameters": {},
+  "optimization_metric": "throughput",
+  "optimization_goal": "maximize",
+  "max_iterations": 5,
+  "post_tuning_windows": 5,
+  "window_duration": 10,
+  "tuning_mode": "outside-of-window",
+  "results_dir": "results/sysbench_cpu_llm_dual_gemma4",
+  "llm_actor_model": "gemma-4-31b-it",
+  "llm_actor_thinking_level": "HIGH",
+  "llm_speculator_model": "gemma-4-26b-a4b-it",
+  "llm_speculator_thinking_level": "MINIMAL",
+  "llm_temperature": 0.2,
+  "include_param_descriptions": true
+}

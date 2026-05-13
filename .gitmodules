@@ -1,0 +1,3 @@
+[submodule "deps/benchbase"]
+	path = deps/benchbase
+	url = https://github.com/gliargovas/benchbase.git

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "os-param-tuning"
+version = "0.1.0"
+description = "SemaTune system-wide OS tuning framework for application targets"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "SemaTune contributors" }]
+dependencies = [
+  "numpy>=1.23,<3",
+  "pandas>=1.5,<3",
+  "tqdm>=4.64,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+]
+docs = [
+  "mkdocs>=1.6,<2",
+  "mkdocs-material>=9.5,<10",
+]
+llm = [
+  "google-genai>=1.0,<2",
+  "openai>=1.0,<3",
+]
+bayesian = [
+  "ConfigSpace>=1.2,<2",
+  "smac>=2,<3",
+]
+mlos = [
+  "mlos-core[smac]>=0.6,<1",
+]
+dqn = [
+  "torch>=2.2,<3",
+]
+tuners = [
+  "ConfigSpace>=1.2,<2",
+  "smac>=2,<3",
+  "mlos-core[smac]>=0.6,<1",
+  "torch>=2.2,<3",
+]
+
+[project.scripts]
+os-param-tuning = "barebones_optimizer.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+  "host_mutation: tests that require root/sudo and modify live host OS parameters",
+  "benchmark_smoke: tests that execute real benchmarks",
+]
