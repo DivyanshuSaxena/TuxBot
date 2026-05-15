@@ -1,9 +1,30 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite SemaTune. TODO: replace this placeholder with the final citation before public release."
-title: "TODO: Add publication title"
+message: "If you use this software, please cite the SemaTune paper."
+title: "SemaTune"
 authors:
-  - family-names: "TODO"
-    given-names: "TODO"
+  - family-names: "Liargkovas"
+    given-names: "Georgios"
+  - family-names: "Joshi"
+    given-names: "Mihir Nitin"
+  - family-names: "Franke"
+    given-names: "Hubertus"
+  - family-names: "Kaffes"
+    given-names: "Kostis"
 version: "0.1.0"
-repository-code: "TODO: Add public repository URL"
+repository-code: "https://github.com/Columbia-DAP-Lab/SemaTune"
 date-released: "2026-05-12"
+preferred-citation:
+  type: article
+  title: "SemaTune: Semantic-Aware Online OS Tuning with Large Language Models"
+  authors:
+    - family-names: "Liargkovas"
+      given-names: "Georgios"
+    - family-names: "Joshi"
+      given-names: "Mihir Nitin"
+    - family-names: "Franke"
+      given-names: "Hubertus"
+    - family-names: "Kaffes"
+      given-names: "Kostis"
+  year: 2026
+  doi: "10.48550/arXiv.2605.15026"
+  url: "https://arxiv.org/abs/2605.15026"

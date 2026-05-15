@@ -82,5 +82,14 @@ LLM-backed tuners.
 If SemaTune helps your research, please cite:
 
 ```bibtex
-TODO: Add citation / BibTeX before public release.
+@misc{liargkovas2026sematune,
+  title={SemaTune: Semantic-Aware Online OS Tuning with Large Language Models},
+  author={Liargkovas, Georgios and Joshi, Mihir Nitin and Franke, Hubertus and Kaffes, Kostis},
+  year={2026},
+  eprint={2605.15026},
+  archivePrefix={arXiv},
+  primaryClass={cs.OS},
+  doi={10.48550/arXiv.2605.15026},
+  url={https://arxiv.org/abs/2605.15026}
+}
 ```
