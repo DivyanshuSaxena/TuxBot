@@ -5,6 +5,8 @@ repo_url: https://github.com/Columbia-DAP-Lab/SemaTune
 repo_name: Columbia-DAP-Lab/SemaTune
 theme:
   name: material
+markdown_extensions:
+  - admonition
 nav:
   - Overview: index.md
   - Quick Start: quick-start.md
