@@ -248,14 +248,26 @@ class LLMTuner(TunerInterface):
             self.api_key = getattr(config, 'openrouter_api_key', None) or os.getenv("OPENROUTER_API_KEY")
             if not self.api_key:
                 raise RuntimeError(
-                    "OpenRouter API key not provided. Set OPENROUTER_API_KEY to your own API key "
-                    "(config openrouter_api_key is supported only for private local configs)."
+                    "No API key for the OpenAI-protocol backend. Set OPENROUTER_API_KEY "
+                    "(config openrouter_api_key is supported only for private local configs). "
+                    "For a self-hosted endpoint set llm_base_url and use that server's key -- "
+                    "a LiteLLM proxy wants its master_key."
                 )
+            # The endpoint is configurable so the OpenAI protocol can reach
+            # something other than OpenRouter -- a LiteLLM proxy fronting
+            # Bedrock, vLLM, a local model. Only the URL differs; the request
+            # shape is identical, which is why the same client serves all of
+            # them. Unset means OpenRouter, so existing configs are unaffected.
+            self.base_url = (getattr(config, 'llm_base_url', None)
+                             or os.getenv("LLM_BASE_URL")
+                             or os.getenv("OPENAI_BASE_URL")
+                             or "https://openrouter.ai/api/v1")
             self.client = openai_sdk.OpenAI(
                 api_key=self.api_key,
-                base_url="https://openrouter.ai/api/v1"
+                base_url=self.base_url
             )
-            logger.info(f"Initialized OpenRouter LLM tuner ({agent_type}): {self.model_name}")
+            logger.info(f"Initialized OpenAI-protocol LLM tuner ({agent_type}): "
+                        f"{self.model_name} @ {self.base_url}")
 
     def _hide_primary_metric_for_this_agent(self) -> bool:
         """Whether this tuner instance should hide the primary optimization metric."""

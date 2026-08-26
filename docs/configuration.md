@@ -109,6 +109,7 @@ be committed or shared.
 | `previous_run_gist` | Prior-run summary injected into the prompt. |
 | `llm_api_key` | Backward-compatible Gemini key field. Prefer `GEMINI_API_KEY`. |
 | `openrouter_api_key` | Backward-compatible OpenRouter key field. Prefer `OPENROUTER_API_KEY`. |
+| `llm_base_url` | Base URL for the OpenAI-protocol backend. Unset means OpenRouter's own endpoint. Point it at any OpenAI-compatible server — a LiteLLM proxy fronting AWS Bedrock, vLLM, a local model — to use a different provider without changing the tuner. Also read from `LLM_BASE_URL` / `OPENAI_BASE_URL`. |
 
 Legacy prompt flags remain accepted for old private configs but new examples
 should prefer `llm_prompt_mode`:

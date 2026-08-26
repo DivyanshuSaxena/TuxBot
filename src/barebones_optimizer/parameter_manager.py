@@ -168,6 +168,37 @@ PARAMETER_METADATA: Dict[str, Dict[str, Any]] = {
         "valid_values": [True, False],
         "description": "Enable or disable scheduler autogrouping"
     },
+
+    # NUMA balancing scan rate. Linux 6.8 moved these out of /proc/sys into
+    # /sys/kernel/debug/sched/numa_balancing/, so they are debugfs files rather
+    # than sysctls and live in ParameterManager.param_paths -- which is also
+    # what lets get_parameter read them back, so they are snapshotted and
+    # restored where a sysctl is not.
+    "numa_scan_delay_ms": {
+        "type": "continuous",
+        "per_core": False,
+        "description": "Delay before a task's first NUMA scan, in ms"
+    },
+    "numa_scan_period_min_ms": {
+        "type": "continuous",
+        "per_core": False,
+        "description": "Floor on the NUMA scan period, in ms (fastest scanning)"
+    },
+    "numa_scan_period_max_ms": {
+        "type": "continuous",
+        "per_core": False,
+        "description": "Ceiling on the NUMA scan period, in ms (slowest scanning)"
+    },
+    "numa_scan_size_mb": {
+        "type": "continuous",
+        "per_core": False,
+        "description": "Address-space scanned per NUMA scan, in MB"
+    },
+    "numa_hot_threshold_ms": {
+        "type": "continuous",
+        "per_core": False,
+        "description": "Age below which a page counts as hot for NUMA tiering, in ms"
+    },
     "sched_cfs_bandwidth_slice_us": {
         "type": "continuous",
         "per_core": False,
@@ -437,7 +468,54 @@ class ParameterManager:
             "migration_cost_ns": "/sys/kernel/debug/sched/migration_cost_ns"
         }
         self._ensure_debugfs_mounted()
+        self._register_numa_balancing_paths()
     
+    # Parameter name -> file under /sys/kernel/debug/sched/numa_balancing/.
+    NUMA_BALANCING_FILES = {
+        "numa_scan_delay_ms": "scan_delay_ms",
+        "numa_scan_period_min_ms": "scan_period_min_ms",
+        "numa_scan_period_max_ms": "scan_period_max_ms",
+        "numa_scan_size_mb": "scan_size_mb",
+        "numa_hot_threshold_ms": "hot_threshold_ms",
+    }
+
+    def _register_numa_balancing_paths(self) -> None:
+        """Register the NUMA scan-rate knobs this kernel actually exposes.
+
+        Registered per file rather than as a block: the directory is absent
+        before 6.8, and hot_threshold_ms is there only on a kernel built with
+        memory tiering. An unregistered name is rejected by set_parameters with
+        a warning, which is the same outcome as a knob that is not tunable.
+        """
+        base = "/sys/kernel/debug/sched/numa_balancing"
+        for name, filename in self.NUMA_BALANCING_FILES.items():
+            path = f"{base}/{filename}"
+            if self._path_exists(path):
+                self.param_paths[name] = path
+        missing = [n for n in self.NUMA_BALANCING_FILES if n not in self.param_paths]
+        if missing:
+            logger.info(
+                "NUMA balancing knobs not present on this kernel: %s",
+                ", ".join(sorted(missing)),
+            )
+
+    @staticmethod
+    def _path_exists(path: str) -> bool:
+        """Whether `path` exists, checking as root.
+
+        /sys/kernel/debug is mode 0700 root, so an unprivileged os.path.exists
+        reports every knob under it absent whether it is there or not.
+        """
+        if os.access(path, os.F_OK):
+            return True
+        try:
+            return subprocess.run(
+                ["sudo", "-n", "test", "-e", path],
+                capture_output=True,
+            ).returncode == 0
+        except Exception:
+            return False
+
     def add_parameter(self, name: str, path: str) -> None:
         """Add a new parameter to manage.
         
@@ -580,6 +658,26 @@ class ParameterManager:
         """
         return self._set_parameter_internal("migration_cost_ns", value)
     
+    def set_numa_scan_delay_ms(self, value: int) -> bool:
+        """Set the NUMA scan delay, in ms."""
+        return self._set_parameter_internal("numa_scan_delay_ms", value)
+
+    def set_numa_scan_period_min_ms(self, value: int) -> bool:
+        """Set the NUMA scan period floor, in ms."""
+        return self._set_parameter_internal("numa_scan_period_min_ms", value)
+
+    def set_numa_scan_period_max_ms(self, value: int) -> bool:
+        """Set the NUMA scan period ceiling, in ms."""
+        return self._set_parameter_internal("numa_scan_period_max_ms", value)
+
+    def set_numa_scan_size_mb(self, value: int) -> bool:
+        """Set the per-scan address-space size, in MB."""
+        return self._set_parameter_internal("numa_scan_size_mb", value)
+
+    def set_numa_hot_threshold_ms(self, value: int) -> bool:
+        """Set the NUMA tiering hot-page age threshold, in ms."""
+        return self._set_parameter_internal("numa_hot_threshold_ms", value)
+
     def set_parameters(self, parameters: Dict[str, Union[int, str, Dict[str, Any]]]) -> bool:
         """Set multiple scheduler parameters.
         

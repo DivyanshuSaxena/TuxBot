@@ -60,6 +60,12 @@ class SimpleConfig:
     # LLM tuner
     llm_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
+    # Base URL for the OpenAI-compatible backend. None means OpenRouter's own
+    # endpoint, which is the upstream default. Point it at any OpenAI-protocol
+    # server to use a different provider -- a LiteLLM proxy fronting Bedrock,
+    # vLLM, or a local model -- without the tuner needing to know the
+    # difference. Also readable from LLM_BASE_URL / OPENAI_BASE_URL.
+    llm_base_url: Optional[str] = None
     llm_provider: str = "auto"
     llm_model_name: str = "gemini-2.5-flash"
     llm_secondary_model: str = "gemini-2.5-flash-lite"
