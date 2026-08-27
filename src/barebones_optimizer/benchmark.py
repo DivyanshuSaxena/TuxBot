@@ -127,12 +127,23 @@ class BenchmarkInterface(ABC):
 
     def update_workload(self, iteration: int) -> None:
         """Update workload parameters based on iteration number.
-        
+
         Args:
             iteration: Current iteration number
         """
         pass
-    
+
+    def get_target_pid(self) -> Optional[int]:
+        """PID of the workload process the cpu_affinity knob should re-taskset.
+
+        None means there is nothing to pin yet (not started) or this benchmark
+        has no single long-lived process to pin (e.g. sysbench relaunches per
+        iteration and is pinned once at launch via pin_to_cores instead).
+        Overridden by the online targets (db_bench, GAPBS), whose one process
+        spans the whole session and so can be re-pinned between windows.
+        """
+        return None
+
     @abstractmethod
     def pre_execute(self) -> bool:
         """Run pre-execution setup (e.g., database load).

@@ -170,6 +170,11 @@ class GapbsBenchmark(BenchmarkInterface):
             f"{self._continuous_log_file}"
         )
 
+    def get_target_pid(self):
+        if self.continuous_process and self.continuous_process.poll() is None:
+            return self.continuous_process.pid
+        return None
+
     def _signal_group(self, sig) -> None:
         pid = self.continuous_process.pid
         try:

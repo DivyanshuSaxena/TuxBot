@@ -68,7 +68,8 @@ class SimpleOptimizer:
         self.trimming_cycles = config.trimming_cycles if config.trimming_enabled else 0
         self._trimming_phase_complete = False
         self.param_manager = ParameterManager()
-        
+        self.param_manager.set_target_pid_provider(getattr(benchmark, "get_target_pid", None))
+
         # State
         self.current_parameters = {}
         self.original_parameters = {}

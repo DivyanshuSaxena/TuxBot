@@ -188,6 +188,11 @@ class DbBenchBenchmark(BenchmarkInterface):
             f"See {self._continuous_log_file}"
         )
 
+    def get_target_pid(self):
+        if self.continuous_process and self.continuous_process.poll() is None:
+            return self.continuous_process.pid
+        return None
+
     def cleanup(self) -> None:
         """Stop db_bench. The database is a shared fixture and is left alone."""
         # The whole group, not the leader: db_bench is started in its own

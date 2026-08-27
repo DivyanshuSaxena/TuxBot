@@ -10,14 +10,53 @@ Also contains parameter metadata including parameter types, per-core support,
 and valid values for categorical parameters.
 """
 
+import glob
 import subprocess
 import logging
 import os
 import re
 import inspect
-from typing import Dict, Optional, Set, Union, Any, List, Tuple
+from typing import Callable, Dict, Optional, Set, Union, Any, List, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def _discover_numa_node_cpulists() -> Dict[str, str]:
+    """NUMA node name -> its cpulist (e.g. "node0" -> "0-15,32-47").
+
+    Read once at import time from /sys/devices/system/node -- this is
+    topology, not state, so unlike the NUMA scan-rate debugfs files it needs
+    no privilege and does not change while the process runs. Empty on a
+    non-NUMA or non-Linux box, which is what makes cpu_affinity degrade to
+    just "all" there instead of failing to import.
+    """
+    nodes: Dict[str, str] = {}
+    for cpulist_path in sorted(glob.glob("/sys/devices/system/node/node[0-9]*/cpulist")):
+        name = os.path.basename(os.path.dirname(cpulist_path))
+        try:
+            with open(cpulist_path) as f:
+                cpulist = f.read().strip()
+        except OSError:
+            continue
+        if cpulist:
+            nodes[name] = cpulist
+    return nodes
+
+
+def _discover_online_cpulist() -> Optional[str]:
+    """The full online cpulist, for resolving cpu_affinity="all"."""
+    try:
+        with open("/sys/devices/system/cpu/online") as f:
+            cpulist = f.read().strip()
+        return cpulist or None
+    except OSError:
+        return None
+
+
+# Discovered once, at import time -- topology, not state (see
+# _discover_numa_node_cpulists). NUMA_NODE_CPULISTS is also what
+# resolve_cpu_affinity_spec()/set_cpu_affinity() key "nodeN" against.
+NUMA_NODE_CPULISTS: Dict[str, str] = _discover_numa_node_cpulists()
 
 # Parameter metadata
 PARAMETER_METADATA: Dict[str, Dict[str, Any]] = {
@@ -203,6 +242,27 @@ PARAMETER_METADATA: Dict[str, Dict[str, Any]] = {
         "type": "continuous",
         "per_core": False,
         "description": "CFS bandwidth controller slice interval in microseconds"
+    },
+
+    # CPU affinity of the workload process itself, applied with `taskset -pc`
+    # against a live PID rather than a sysfs/sysctl write. "all" means no
+    # pinning, "nodeN" pins to the cpulist of NUMA node N (see
+    # NUMA_NODE_CPULISTS), and anything else is passed through to taskset as a
+    # raw cpulist ("0-7", "0,2,4-7"). Only meaningful for a benchmark whose
+    # BenchmarkInterface.get_target_pid() returns a live PID -- the online
+    # targets (db_bench, GAPBS) whose one process spans the whole session; for
+    # a per-iteration relaunch model (sysbench) affinity is set once at launch
+    # via the config's pin_to_cores instead. valid_values here is discovered
+    # topology (all node labels this machine actually has), not a hardcoded
+    # domain -- a config's parameter_ranges narrows it further per run.
+    "cpu_affinity": {
+        "type": "categorical",
+        "per_core": False,
+        "valid_values": ["all", *sorted(NUMA_NODE_CPULISTS.keys())],
+        "description": (
+            "CPU affinity of the workload process: 'all' for no pinning, "
+            "'nodeN' to pin to NUMA node N, or a raw taskset cpulist"
+        )
     },
     
     # Additional network stack controls
@@ -469,7 +529,24 @@ class ParameterManager:
         }
         self._ensure_debugfs_mounted()
         self._register_numa_balancing_paths()
-    
+
+        # Supplies the PID cpu_affinity re-tasksets. Not known at construction
+        # time -- ParameterManager is built before the benchmark process
+        # exists -- so it's a callback resolved lazily on each set_cpu_affinity
+        # call rather than a value captured once.
+        self._target_pid_provider: Optional[Callable[[], Optional[int]]] = None
+
+    def set_target_pid_provider(self, provider: Optional[Callable[[], Optional[int]]]) -> None:
+        """Register the callable cpu_affinity uses to find its target PID.
+
+        The optimizer wires this to benchmark.get_target_pid once the
+        benchmark object exists (SimpleOptimizer.__init__ builds
+        ParameterManager first). A provider returning None means "not running
+        yet" -- set_cpu_affinity logs and no-ops rather than failing the run,
+        the same soft-failure shape set_epp uses for an unsupported knob.
+        """
+        self._target_pid_provider = provider
+
     # Parameter name -> file under /sys/kernel/debug/sched/numa_balancing/.
     NUMA_BALANCING_FILES = {
         "numa_scan_delay_ms": "scan_delay_ms",
@@ -677,6 +754,69 @@ class ParameterManager:
     def set_numa_hot_threshold_ms(self, value: int) -> bool:
         """Set the NUMA tiering hot-page age threshold, in ms."""
         return self._set_parameter_internal("numa_hot_threshold_ms", value)
+
+    @staticmethod
+    def resolve_cpu_affinity_spec(value: str) -> Optional[str]:
+        """Turn a cpu_affinity value into a taskset cpulist, or None if unresolvable.
+
+        "all" resolves to the online cpulist (explicit rather than skipping
+        taskset entirely, so a prior pin is actually undone). "nodeN" resolves
+        against the topology discovered at import (NUMA_NODE_CPULISTS).
+        Anything else is assumed to already be a taskset cpulist ("0-7",
+        "0,2,4-7") and is passed through unchanged -- the same convention
+        set_scaling_governor's `cores` argument uses elsewhere in this file.
+        """
+        value = (value or "").strip()
+        if not value or value.lower() == "all":
+            return _discover_online_cpulist()
+        if value in NUMA_NODE_CPULISTS:
+            return NUMA_NODE_CPULISTS[value]
+        return value
+
+    def set_cpu_affinity(self, value: str) -> bool:
+        """Re-taskset the workload process onto the cores `value` names.
+
+        Unlike every other parameter here, this writes no sysfs/sysctl file --
+        it runs `taskset -pc <cpulist> <pid>` against whatever
+        set_target_pid_provider's callback currently returns. That PID is the
+        online benchmark's one long-lived process (db_bench, GAPBS); a
+        per-iteration relaunch benchmark (sysbench) has no such PID between
+        windows, so this is a no-op there and pinning is instead a launch-time
+        decision (the config's pin_to_cores). No PID yet -- benchmark not
+        started, or not an online target -- logs and returns True rather than
+        failing the run, mirroring set_epp's soft-failure shape for a knob
+        this benchmark simply doesn't apply to.
+        """
+        cpulist = self.resolve_cpu_affinity_spec(value)
+        if not cpulist:
+            logger.warning(f"Could not resolve cpu_affinity value: {value!r}")
+            return False
+
+        if self._target_pid_provider is None:
+            logger.info("cpu_affinity: no target PID provider registered; skipping")
+            return True
+        pid = self._target_pid_provider()
+        if pid is None:
+            logger.info("cpu_affinity: no live target PID yet; skipping")
+            return True
+
+        commands = [["taskset", "-pc", cpulist, str(pid)]]
+        if os.geteuid() != 0:
+            commands.append(["sudo", "-n", "taskset", "-pc", cpulist, str(pid)])
+
+        last_error = ""
+        for cmd in commands:
+            try:
+                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                logger.info(f"Set cpu_affinity={value!r} (cpulist {cpulist}) on pid {pid}")
+                return True
+            except subprocess.CalledProcessError as e:
+                last_error = e.stderr.strip() if e.stderr else str(e)
+            except Exception as e:
+                last_error = str(e)
+
+        logger.error(f"Error setting cpu_affinity={value!r} on pid {pid}: {last_error}")
+        return False
 
     def set_parameters(self, parameters: Dict[str, Union[int, str, Dict[str, Any]]]) -> bool:
         """Set multiple scheduler parameters.
@@ -1840,7 +1980,12 @@ def get_default_parameters() -> Dict[str, Union[int, str, bool]]:
         "numa_scan_period_max_ms": 60000,
         "numa_scan_size_mb": 256,
         "numa_hot_threshold_ms": 1000,
-        
+
+        # No pinning. Not a live-discovered sysctl default (there is no
+        # sysctl for this) -- "all" is simply the meaning of "untouched",
+        # which is what a "fixed" control run should apply.
+        "cpu_affinity": "all",
+
         # DVFS/Turbo parameters
         "scaling_governor": "powersave",  # Default governor
         "scaling_min_freq": 0,  # 0 = use system default
