@@ -318,7 +318,10 @@ def _gapbs(tmp_path, **overrides):
 def test_gapbs_command_uses_configured_values(tmp_path):
     benchmark = _gapbs(tmp_path, gapbs_scale=24, gapbs_iterations=8, gapbs_trials=500)
 
-    assert benchmark._build_command()[1:] == ["-g", "24", "-i", "8", "-n", "500"]
+    # stdbuf, because GAPBS block-buffers std::cout into a file.
+    cmd = benchmark._build_command()
+    assert cmd[:2] == ["stdbuf", "-oL"]
+    assert cmd[3:] == ["-g", "24", "-i", "8", "-n", "500"]
 
 
 def test_gapbs_rejects_unknown_kernel(tmp_path):

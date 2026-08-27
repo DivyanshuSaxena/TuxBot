@@ -10,6 +10,7 @@ once, before the first window, rather than once per window.
 import logging
 import os
 import re
+import shutil
 import signal
 import subprocess
 import time
@@ -73,12 +74,23 @@ class GapbsBenchmark(BenchmarkInterface):
         # -n is deliberately large: the process must outlast every window and is
         # killed at cleanup, so overestimating costs nothing while running out
         # mid-run fails the run.
-        return [
+        cmd = [
             self._resolve_binary(),
             "-g", str(self.scale),
             "-i", str(self.iterations),
             "-n", str(self.trials),
         ]
+
+        # GAPBS prints through std::cout, which block-buffers into a file. A
+        # trial line is ~40 bytes, so without this a window sees no trial until
+        # ~100 of them have accumulated -- which at scale 27 is hours.
+        if shutil.which("stdbuf"):
+            return ["stdbuf", "-oL"] + cmd
+        logger.warning(
+            "stdbuf not found; GAPBS trial lines may be buffered and windows "
+            "may report no trials"
+        )
+        return cmd
 
     def _foreign_kernel_pids(self) -> List[int]:
         """Any run of this kernel that is not the one we started."""
