@@ -71,6 +71,10 @@ class BenchmarkMetrics:
     cstate_c6_pct: Optional[float] = None  # C-state C6 residency percentage (focused cores)
     cpu_load_cores_pct: Optional[float] = None  # CPU load percentage (focused cores)
     cpu_load_socket0_pct: Optional[float] = None  # CPU load percentage (socket 0, all cores)
+
+    # NUMA locality over the window, from /proc/vmstat deltas
+    numa_local_pct: Optional[float] = None  # Allocations landing on the running task's node
+    numa_hint_local_pct: Optional[float] = None  # NUMA-balancing hint faults already local
     
     def get_metric(self, name: str) -> float:
         """Get a metric value by name, with fallback to extra_metrics."""
@@ -578,6 +582,14 @@ sleep 1 &&
             "cpu_load_socket0_pct": power_cpu_metrics.get("cpu_load_socket0_pct") if power_cpu_metrics else None,
         }
         
+        # Flattened as well as nested, so optimization_metric can name one.
+        numa_metrics = self._numa_window_delta()
+        if numa_metrics:
+            metrics.numa_local_pct = numa_metrics.get("numa_local_pct")
+            metrics.numa_hint_local_pct = numa_metrics.get("numa_hint_local_pct")
+            system_metrics_dict["numa_metrics"] = numa_metrics
+            metrics.extra_metrics.update(numa_metrics)
+
         metrics.extra_metrics["system_metrics"] = system_metrics_dict
         
         # Add perf metrics to extra_metrics and system_metrics
@@ -607,6 +619,46 @@ sleep 1 &&
                 cores.add(int(part))
         return cores
     
+    _NUMA_VMSTAT_KEYS = (
+        "numa_hit", "numa_miss", "numa_foreign", "numa_local", "numa_other",
+        "numa_pte_updates", "numa_hint_faults", "numa_hint_faults_local",
+        "numa_pages_migrated",
+    )
+
+    def _read_numa_vmstat(self) -> Dict[str, int]:
+        """Read the NUMA counters from /proc/vmstat."""
+        values: Dict[str, int] = {}
+        try:
+            with open("/proc/vmstat") as f:
+                for line in f:
+                    name, _, value = line.partition(" ")
+                    if name in self._NUMA_VMSTAT_KEYS:
+                        values[name] = int(value)
+        except (OSError, ValueError) as e:
+            logger.warning(f"Failed to read NUMA counters from /proc/vmstat: {e}")
+        return values
+
+    def _numa_window_delta(self) -> Dict[str, Any]:
+        """Diff the NUMA counters against the snapshot taken at window start."""
+        start = getattr(self, "_numa_window_start", None)
+        if not start:
+            return {}
+        end = self._read_numa_vmstat()
+        delta: Dict[str, Any] = {k: end[k] - v for k, v in start.items() if k in end}
+
+        allocations = delta.get("numa_local", 0) + delta.get("numa_other", 0)
+        if allocations > 0:
+            delta["numa_local_pct"] = 100.0 * delta.get("numa_local", 0) / allocations
+
+        # numa_pte_updates is the scanner's own work, so hint faults are only
+        # meaningful when the scanner ran at all during the window.
+        hint_faults = delta.get("numa_hint_faults", 0)
+        if hint_faults > 0:
+            delta["numa_hint_local_pct"] = (
+                100.0 * delta.get("numa_hint_faults_local", 0) / hint_faults
+            )
+        return delta
+
     def _read_rapl_socket_energy(self, socket: int = 0) -> Optional[int]:
         """Read RAPL energy for a specific socket (package).
         
@@ -1031,6 +1083,7 @@ sleep 1 &&
             Window start timestamp (absolute time)
         """
         metrics_file = os.path.join(self.results_dir, f"window_{window_number}_metrics.json")
+        self._numa_window_start = self._read_numa_vmstat()
         window_start_time = time.time()
         
         # Start collection thread (one thread per window)

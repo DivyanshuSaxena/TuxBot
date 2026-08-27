@@ -36,6 +36,24 @@ These fields apply only when `benchmark` is `sysbench_cpu`.
 | `sysbench_report_interval` | Seconds between live sysbench interval reports. Default is `1`. |
 | `sysbench_continuous_duration` | Maximum lifetime for the live sysbench process. Increase for long LLM runs. Default is `3600`. |
 
+## db_bench Fields
+
+These fields apply only when `benchmark` is `db_bench`.
+
+One long-lived `db_bench` runs for the whole session and each window reads the
+slice of its interval CSV that landed inside the window, so page placement is
+not reset between iterations. The interval CSV carries throughput only, so
+`latency_avg` and `latency_p95` stay `0` for this benchmark.
+
+| Field | Meaning |
+| --- | --- |
+| `db_bench_binary` | Path to the built `db_bench`. Default is `~/rocksdb/db_bench`. A bare name is looked up on `PATH`. |
+| `db_bench_db` | Existing RocksDB database directory. Built once with `--benchmarks=fillseq`, never by a tuning run. Default is `/mydata/rocksdb`. |
+| `db_bench_benchmarks` | Value passed to `--benchmarks`. Default is `readwhilewriting`. |
+| `db_bench_threads` | Client thread count. Default is `32`. |
+| `db_bench_cache_size` | Block cache in bytes. Default is `1048576`, small enough that reads miss the block cache. |
+| `db_bench_report_interval` | Seconds between interval rows in the report CSV. Default is `1`. |
+
 ## TPCC / BenchBase Fields
 
 These fields apply only when `benchmark` is `tpcc`.
@@ -61,6 +79,7 @@ These fields apply only when `benchmark` is `tpcc`.
 | `max_iterations` | Number of tuning windows. |
 | `post_tuning_windows` | Extra windows after tuning using the final parameter set. |
 | `window_duration` | Measurement window duration in seconds. |
+| `settle_seconds` | Wait after a parameter change before the next window measures it. Default is `0`. Raise it for knobs whose effect lags, such as the NUMA scan-rate tunables. |
 | `continuous_apply` | Re-apply parameters during a window for in-window modes. |
 | `tuning_mode` | `outside-of-window` or `in-window`. Default is `outside-of-window`: tune after a measured window, then apply before the next measured window. |
 | `constraint_metric` | Optional metric that must satisfy a constraint. |

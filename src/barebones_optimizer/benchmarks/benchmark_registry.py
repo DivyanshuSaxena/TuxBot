@@ -32,6 +32,15 @@ class BenchmarkType(Enum):
         default_options={"cpu_max_prime": 20000},
     )
 
+    DB_BENCH = BenchmarkInfo(
+        name="db_bench",
+        script="",
+        requires_setup=False,
+        requires_cleanup=False,
+        base_command=["db_bench"],
+        description="RocksDB db_bench against a pre-built database",
+    )
+
     TPCC = BenchmarkInfo(
         name="tpcc",
         script="",

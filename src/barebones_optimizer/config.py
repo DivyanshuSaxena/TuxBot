@@ -25,6 +25,14 @@ class SimpleConfig:
     sysbench_report_interval: int = 1
     sysbench_continuous_duration: int = 3600
 
+    # RocksDB db_bench
+    db_bench_binary: str = "~/rocksdb/db_bench"
+    db_bench_db: str = "/mydata/rocksdb"
+    db_bench_benchmarks: str = "readwhilewriting"
+    db_bench_threads: int = 32
+    db_bench_cache_size: int = 1048576
+    db_bench_report_interval: int = 1
+
     # BenchBase TPCC
     benchbase_jar_path: str = "deps/benchbase/target/benchbase-postgres/benchbase.jar"
     benchbase_config_file: str = "config/benchbase/postgres/tpcc.xml"
@@ -47,6 +55,7 @@ class SimpleConfig:
     max_iterations: int = 3
     post_tuning_windows: int = 0
     window_duration: int = 10
+    settle_seconds: int = 0
     continuous_apply: bool = False
     tuning_mode: str = "outside-of-window"
     results_dir: str = "results"
@@ -310,6 +319,8 @@ class SimpleConfig:
             raise ValueError("post_tuning_windows must be non-negative")
         if self.window_duration <= 0:
             raise ValueError("window_duration must be positive")
+        if self.settle_seconds < 0:
+            raise ValueError("settle_seconds must be non-negative")
         if self.sysbench_report_interval <= 0:
             raise ValueError("sysbench_report_interval must be positive")
         if self.sysbench_continuous_duration <= 0:
@@ -322,6 +333,14 @@ class SimpleConfig:
             raise ValueError(
                 f"llm_prompt_extra_instructions_file not found: {self.llm_prompt_extra_instructions_file}"
             )
+
+        if self.benchmark == "db_bench":
+            if self.db_bench_threads <= 0:
+                raise ValueError("db_bench_threads must be positive")
+            if self.db_bench_report_interval <= 0:
+                raise ValueError("db_bench_report_interval must be positive")
+            if not self.db_bench_db:
+                raise ValueError("db_bench requires db_bench_db")
 
         if self.benchmark == "tpcc":
             if not self.benchbase_jar_path:

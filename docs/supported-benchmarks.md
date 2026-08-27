@@ -2,12 +2,12 @@
 
 SemaTune is organized around application targets. A target is any workload or
 service that can be prepared, measured over a time window, and summarized into
-metrics. The repository includes two maintained targets that are used throughout
-the docs and tests.
+metrics. The repository includes three maintained targets that are used
+throughout the docs and tests.
 
 The config field is still named `benchmark` for compatibility. On this page,
-`benchmark: "sysbench_cpu"` and `benchmark: "tpcc"` mean “select this target
-adapter.”
+`benchmark: "sysbench_cpu"`, `benchmark: "db_bench"` and `benchmark: "tpcc"`
+mean “select this target adapter.”
 
 ## `sysbench_cpu`
 
@@ -27,6 +27,32 @@ Typical objective:
 Important target fields are documented in the
 [Configuration Reference](configuration.md#sysbench_cpu-fields), and the
 step-by-step run guide is [Running Sysbench CPU](running-sysbench-cpu.md).
+
+## `db_bench`
+
+`db_bench` runs RocksDB against a database built once beforehand. It is the
+memory-resident target: the working set is far larger than one NUMA node, so
+memory-placement parameters have something to move.
+
+One process runs for the whole session and each window averages the interval
+rows written inside it, so page cache and NUMA page placement carry across
+iterations instead of being reset every window.
+
+Typical objective:
+
+```json
+{
+  "optimization_metric": "throughput",
+  "optimization_goal": "maximize"
+}
+```
+
+The interval stream carries throughput only, so `latency_avg` and
+`latency_p95` stay `0` for this target.
+
+Important target fields are documented in the
+[Configuration Reference](configuration.md#db_bench-fields), and the
+step-by-step run guide is [Running db_bench](running-db-bench.md).
 
 ## `tpcc`
 

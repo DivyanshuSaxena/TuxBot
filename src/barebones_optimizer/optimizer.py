@@ -143,6 +143,7 @@ class SimpleOptimizer:
             if not self.param_manager.set_parameters(initial_params):
                 raise RuntimeError("Failed to apply initial parameters")
             self.current_parameters = initial_params.copy()
+            self._settle("initial parameters")
             
             # Main optimization loop - branch based on tuning_mode
             if self.config.tuning_mode == "outside-of-window":
@@ -999,6 +1000,13 @@ class SimpleOptimizer:
         
         logger.info("=" * 60)
     
+    def _settle(self, reason: str) -> None:
+        """Wait for a knob change to take effect before the next window measures it."""
+        seconds = getattr(self.config, "settle_seconds", 0)
+        if seconds > 0:
+            logger.info(f"Settling {seconds}s after {reason}")
+            time.sleep(seconds)
+
     def _apply_tuner_parameters(self, tuner_response: 'TunerResponse', iteration: int, duration_s: float = 0.0) -> Optional[Dict[str, Any]]:
         """Apply tuner parameters and return timing information.
         
@@ -1139,7 +1147,9 @@ class SimpleOptimizer:
                 )
                 if tuner_response.justification:
                     logger.info(f"Tuner justification: {tuner_response.justification}")
-                
+
+                self._settle(f"tuner parameters for iteration {iteration + 1}")
+
                 # Return timing information
                 timing_info = {
                     "parameters_applied": True,

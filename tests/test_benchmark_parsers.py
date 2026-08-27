@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from barebones_optimizer.benchmarks.benchbase import BenchBaseBenchmark
+from barebones_optimizer.benchmarks.db_bench import DbBenchBenchmark
 from barebones_optimizer.benchmarks.sysbench import SysbenchBenchmark
 from barebones_optimizer.config import SimpleConfig
 
@@ -214,3 +215,76 @@ def test_benchbase_parser_reads_summary_json(tmp_path):
     assert metrics.latency_avg == 2.0
     assert metrics.latency_p95 == 5.0
     assert metrics.extra_metrics["latency_p99"] == 9.0
+
+
+# One second of db_bench --report_interval_seconds output, captured from a
+# readwhilewriting run against a 50GB fixture.
+DB_BENCH_INTERVAL_CSV = """secs_elapsed,interval_qps
+1,401270
+2,435290
+3,459565
+4,496803
+5,533239
+"""
+
+
+def _db_bench(tmp_path, **overrides):
+    binary = tmp_path / "db_bench"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    fields = dict(
+        benchmark="db_bench",
+        db_bench_binary=str(binary),
+        db_bench_db=str(tmp_path),
+        results_dir=str(tmp_path),
+    )
+    fields.update(overrides)
+    return DbBenchBenchmark(SimpleConfig(**fields))
+
+
+def test_db_bench_command_uses_configured_values(tmp_path):
+    benchmark = _db_bench(tmp_path, db_bench_threads=8, db_bench_cache_size=4096,
+                          db_bench_benchmarks="readrandom")
+    cmd = benchmark._build_command(30)
+
+    assert "--benchmarks=readrandom" in cmd
+    assert "--threads=8" in cmd
+    assert "--cache_size=4096" in cmd
+    assert "--duration=30" in cmd
+    assert "--use_existing_db=1" in cmd
+    assert f"--report_file={benchmark.report_file}" in cmd
+
+
+def test_db_bench_run_outlasts_every_window(tmp_path):
+    benchmark = _db_bench(tmp_path, window_duration=60, settle_seconds=15,
+                          max_iterations=4, post_tuning_windows=2)
+
+    # Six windows, each costing the window plus settle plus tuner headroom.
+    assert benchmark._run_seconds() == 6 * (60 + 15 + 60) + 300
+
+
+def test_db_bench_parses_interval_csv(tmp_path):
+    benchmark = _db_bench(tmp_path)
+    window_dir = tmp_path / "window_1"
+    window_dir.mkdir()
+    (window_dir / "db_bench_intervals.csv").write_text(DB_BENCH_INTERVAL_CSV)
+
+    metrics = benchmark.parse_results(str(window_dir))
+
+    assert metrics.throughput == pytest.approx(465233.4)
+    assert metrics.goodput == metrics.throughput
+    assert metrics.extra_metrics["intervals"] == 5
+    assert metrics.extra_metrics["interval_qps_min"] == 401270
+    assert metrics.extra_metrics["interval_qps_max"] == 533239
+    # The interval CSV carries no latency; the histogram only prints at exit.
+    assert metrics.latency_avg == 0.0
+    assert metrics.latency_p95 == 0.0
+
+
+def test_db_bench_missing_output_raises(tmp_path):
+    benchmark = _db_bench(tmp_path)
+    empty = tmp_path / "window_2"
+    empty.mkdir()
+
+    with pytest.raises(FileNotFoundError):
+        benchmark.parse_results(str(empty))

@@ -15,6 +15,7 @@ nav:
   - How SemaTune Works: how-it-works.md
   - Included Targets: supported-benchmarks.md
   - Running Sysbench CPU: running-sysbench-cpu.md
+  - Running db_bench: running-db-bench.md
   - Running TPCC: running-tpcc.md
   - Configuration Recipes: config-recipes.md
   - Configuration Reference: configuration.md
