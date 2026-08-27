@@ -2,12 +2,12 @@
 
 SemaTune is organized around application targets. A target is any workload or
 service that can be prepared, measured over a time window, and summarized into
-metrics. The repository includes three maintained targets that are used
+metrics. The repository includes four maintained targets that are used
 throughout the docs and tests.
 
 The config field is still named `benchmark` for compatibility. On this page,
-`benchmark: "sysbench_cpu"`, `benchmark: "db_bench"` and `benchmark: "tpcc"`
-mean “select this target adapter.”
+`benchmark: "sysbench_cpu"`, `benchmark: "db_bench"`, `benchmark: "gapbs"` and
+`benchmark: "tpcc"` mean “select this target adapter.”
 
 ## `sysbench_cpu`
 
@@ -53,6 +53,34 @@ The interval stream carries throughput only, so `latency_avg` and
 Important target fields are documented in the
 [Configuration Reference](configuration.md#db_bench-fields), and the
 step-by-step run guide is [Running db_bench](running-db-bench.md).
+
+## `gapbs`
+
+`gapbs` runs a GAP Benchmark Suite graph kernel over a generated Kronecker
+graph. Graph traversal has deliberately poor locality, so it is the target
+whose performance depends most directly on where its memory sits.
+
+One kernel run covers the whole session and each window reports the trials that
+finished inside it. Generating and building the graph costs several times what
+a trial does — 81s against 12s at scale 27 — so both happen once before the
+first window rather than inside one.
+
+Typical objective:
+
+```json
+{
+  "optimization_metric": "throughput",
+  "optimization_goal": "maximize"
+}
+```
+
+Throughput is completed trials per second and `latency_avg` is the mean trial
+time. A window can legitimately contain no completed trial when a trial is
+longer than the window; throughput is then `0` rather than an error, and the
+system metrics still describe the window.
+
+Important target fields are documented in the
+[Configuration Reference](configuration.md#gapbs-fields).
 
 ## `tpcc`
 

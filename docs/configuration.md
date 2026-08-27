@@ -54,6 +54,22 @@ not reset between iterations. The interval CSV carries throughput only, so
 | `db_bench_cache_size` | Block cache in bytes. Default is `1048576`, small enough that reads miss the block cache. |
 | `db_bench_report_interval` | Seconds between interval rows in the report CSV. Default is `1`. |
 
+## GAPBS Fields
+
+These fields apply only when `benchmark` is `gapbs`.
+
+One kernel run covers the whole session and each window counts the trials that
+finished inside it. Generating and building the graph costs several times what
+a trial does, so both happen once before the first window.
+
+| Field | Meaning |
+| --- | --- |
+| `gapbs_dir` | GAPBS checkout holding the built kernels. Default is `~/gapbs`. |
+| `gapbs_kernel` | Kernel to run: `bc`, `bfs`, `cc`, `cc_sv`, `pr`, `pr_spmv`, `sssp` or `tc`. Default is `bc`. |
+| `gapbs_scale` | Kronecker graph scale (`-g`). Default is `27`, about 37GB, which exceeds one NUMA node on a 4x32GB machine and so must span nodes. |
+| `gapbs_iterations` | Per-trial kernel iterations (`-i`). Default is `1`. Raising it makes a trial longer, not the graph bigger. |
+| `gapbs_trials` | Trials to run (`-n`). Default is `100000`: the process must outlast every window and is killed at cleanup, so overestimating costs nothing while running out mid-run fails the run. |
+
 ## TPCC / BenchBase Fields
 
 These fields apply only when `benchmark` is `tpcc`.

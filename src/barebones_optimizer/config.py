@@ -33,6 +33,13 @@ class SimpleConfig:
     db_bench_cache_size: int = 1048576
     db_bench_report_interval: int = 1
 
+    # GAPBS graph kernels
+    gapbs_dir: str = "~/gapbs"
+    gapbs_kernel: str = "bc"
+    gapbs_scale: int = 27
+    gapbs_iterations: int = 1
+    gapbs_trials: int = 100000
+
     # BenchBase TPCC
     benchbase_jar_path: str = "deps/benchbase/target/benchbase-postgres/benchbase.jar"
     benchbase_config_file: str = "config/benchbase/postgres/tpcc.xml"
@@ -341,6 +348,14 @@ class SimpleConfig:
                 raise ValueError("db_bench_report_interval must be positive")
             if not self.db_bench_db:
                 raise ValueError("db_bench requires db_bench_db")
+
+        if self.benchmark == "gapbs":
+            if self.gapbs_scale <= 0:
+                raise ValueError("gapbs_scale must be positive")
+            if self.gapbs_trials <= 0:
+                raise ValueError("gapbs_trials must be positive")
+            if self.gapbs_iterations <= 0:
+                raise ValueError("gapbs_iterations must be positive")
 
         if self.benchmark == "tpcc":
             if not self.benchbase_jar_path:

@@ -6,6 +6,7 @@ import pytest
 
 from barebones_optimizer.benchmarks.benchbase import BenchBaseBenchmark
 from barebones_optimizer.benchmarks.db_bench import DbBenchBenchmark
+from barebones_optimizer.benchmarks.gapbs import GapbsBenchmark
 from barebones_optimizer.benchmarks.sysbench import SysbenchBenchmark
 from barebones_optimizer.config import SimpleConfig
 
@@ -288,3 +289,75 @@ def test_db_bench_missing_output_raises(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         benchmark.parse_results(str(empty))
+
+
+# Real bc output at scale 27: generate and build dwarf a trial, which is why
+# they happen once before the first window rather than inside one.
+GAPBS_LOG = """Generate Time:       30.17326
+Build Time:          51.27699
+Trial Time:          11.36036
+Trial Time:          15.83346
+"""
+
+
+def _gapbs(tmp_path, **overrides):
+    gapbs_dir = tmp_path / "gapbs"
+    gapbs_dir.mkdir()
+    kernel = gapbs_dir / "bc"
+    kernel.write_text("#!/bin/sh\nexit 0\n")
+    kernel.chmod(0o755)
+    fields = dict(
+        benchmark="gapbs",
+        gapbs_dir=str(gapbs_dir),
+        results_dir=str(tmp_path),
+    )
+    fields.update(overrides)
+    return GapbsBenchmark(SimpleConfig(**fields))
+
+
+def test_gapbs_command_uses_configured_values(tmp_path):
+    benchmark = _gapbs(tmp_path, gapbs_scale=24, gapbs_iterations=8, gapbs_trials=500)
+
+    assert benchmark._build_command()[1:] == ["-g", "24", "-i", "8", "-n", "500"]
+
+
+def test_gapbs_rejects_unknown_kernel(tmp_path):
+    with pytest.raises(ValueError):
+        _gapbs(tmp_path, gapbs_kernel="not_a_kernel")
+
+
+def test_gapbs_counts_only_trial_lines(tmp_path):
+    benchmark = _gapbs(tmp_path)
+    log = tmp_path / "gapbs_windows" / "continuous_gapbs.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(GAPBS_LOG)
+
+    # Generate and Build must not be mistaken for trials.
+    assert benchmark._read_trials() == [11.36036, 15.83346]
+
+
+def test_gapbs_reports_trial_rate(tmp_path):
+    benchmark = _gapbs(tmp_path)
+    window_dir = tmp_path / "window_1"
+    window_dir.mkdir()
+    (window_dir / "gapbs_trials.txt").write_text(
+        "window_seconds 60.000\n11.36036\n15.83346\n")
+
+    metrics = benchmark.parse_results(str(window_dir))
+
+    assert metrics.throughput == pytest.approx(2 / 60.0)
+    assert metrics.latency_avg == pytest.approx(13596.91)
+    assert metrics.extra_metrics["trials"] == 2
+
+
+def test_gapbs_window_with_no_completed_trial_is_zero_not_an_error(tmp_path):
+    benchmark = _gapbs(tmp_path)
+    window_dir = tmp_path / "window_2"
+    window_dir.mkdir()
+    (window_dir / "gapbs_trials.txt").write_text("window_seconds 60.000\n")
+
+    metrics = benchmark.parse_results(str(window_dir))
+
+    # A trial can outlast a window; the system metrics still describe it.
+    assert metrics.throughput == 0.0
+    assert metrics.extra_metrics["trials"] == 0

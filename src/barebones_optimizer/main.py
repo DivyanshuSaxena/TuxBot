@@ -11,6 +11,7 @@ import sys
 from barebones_optimizer.benchmarks.benchbase import BenchBaseBenchmark
 from barebones_optimizer.benchmarks.benchmark_registry import BenchmarkType
 from barebones_optimizer.benchmarks.db_bench import DbBenchBenchmark
+from barebones_optimizer.benchmarks.gapbs import GapbsBenchmark
 from barebones_optimizer.benchmarks.sysbench import SysbenchBenchmark
 from barebones_optimizer.config import SimpleConfig
 from barebones_optimizer.doctor import run_doctor
@@ -69,6 +70,8 @@ def create_benchmark(config: SimpleConfig):
         return SysbenchBenchmark(config)
     if benchmark_name == "db_bench":
         return DbBenchBenchmark(config)
+    if benchmark_name == "gapbs":
+        return GapbsBenchmark(config)
     if benchmark_name == "tpcc":
         return BenchBaseBenchmark(config)
     raise ValueError(f"Unsupported benchmark: {config.benchmark}")

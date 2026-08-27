@@ -41,6 +41,15 @@ class BenchmarkType(Enum):
         description="RocksDB db_bench against a pre-built database",
     )
 
+    GAPBS = BenchmarkInfo(
+        name="gapbs",
+        script="",
+        requires_setup=False,
+        requires_cleanup=False,
+        base_command=["bc"],
+        description="GAP Benchmark Suite graph kernel over a generated graph",
+    )
+
     TPCC = BenchmarkInfo(
         name="tpcc",
         script="",
