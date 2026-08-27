@@ -69,15 +69,20 @@ Typical objective:
 
 ```json
 {
-  "optimization_metric": "throughput",
-  "optimization_goal": "maximize"
+  "optimization_metric": "latency_avg",
+  "optimization_goal": "minimize"
 }
 ```
 
 Throughput is completed trials per second and `latency_avg` is the mean trial
-time. A window can legitimately contain no completed trial when a trial is
-longer than the window; throughput is then `0` rather than an error, and the
-system metrics still describe the window.
+time in milliseconds. Prefer `latency_avg`: a window holds only a handful of
+whole trials -- 6 to 8 at scale 27 in a 120s window -- so throughput is
+quantized in steps of about 14%, and any smaller effect is invisible. The mean
+trial time is continuous over the same trials and resolves much finer.
+
+A window can legitimately contain no completed trial when a trial is longer
+than the window; throughput is then `0` rather than an error, and the system
+metrics still describe the window.
 
 Important target fields are documented in the
 [Configuration Reference](configuration.md#gapbs-fields).
