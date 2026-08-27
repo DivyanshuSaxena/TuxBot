@@ -10,6 +10,7 @@ tuning run is trying to measure.
 import logging
 import os
 import shutil
+import signal
 import subprocess
 import time
 from datetime import datetime
@@ -120,6 +121,15 @@ class DbBenchBenchmark(BenchmarkInterface):
                 f"built once with --benchmarks=fillseq, not by this run."
             )
 
+        stale = self._foreign_db_bench_pids()
+        if stale:
+            raise RuntimeError(
+                f"db_bench is already running on {self.db_path} (pids {stale}). "
+                f"A leftover from an earlier run competes for the same database "
+                f"and the throughput would still look plausible, so this stops "
+                f"rather than measuring it. Kill it and re-run."
+            )
+
         cmd = self._wrap_with_taskset(self._build_command(self._run_seconds()))
         self._continuous_command = cmd
 
@@ -143,6 +153,18 @@ class DbBenchBenchmark(BenchmarkInterface):
         )
         logger.info("Continuous db_bench started with PID %s", self.continuous_process.pid)
         logger.info("Continuous db_bench log: %s", self._continuous_log_file)
+
+    def _foreign_db_bench_pids(self):
+        """Any db_bench on this database that is not the one we started."""
+        try:
+            found = subprocess.run(
+                ["pgrep", "-f", f"db_bench.*--db={self.db_path}"],
+                capture_output=True, text=True,
+            ).stdout.split()
+        except (OSError, ValueError):
+            return []
+        ours = self.continuous_process.pid if self.continuous_process else None
+        return [int(pid) for pid in found if int(pid) not in (ours, os.getpid())]
 
     def pre_execute(self) -> bool:
         """Start db_bench and wait for it to report, so window 1 is not startup."""
@@ -168,15 +190,35 @@ class DbBenchBenchmark(BenchmarkInterface):
 
     def cleanup(self) -> None:
         """Stop db_bench. The database is a shared fixture and is left alone."""
+        # The whole group, not the leader: db_bench is started in its own
+        # session, and a leftover would compete with the next run's database.
         if self.continuous_process and self.continuous_process.poll() is None:
-            self.continuous_process.terminate()
+            self._signal_group(signal.SIGTERM)
             try:
                 self.continuous_process.wait(timeout=30)
             except subprocess.TimeoutExpired:
-                self.continuous_process.kill()
+                logger.warning("db_bench ignored SIGTERM; killing it")
+                self._signal_group(signal.SIGKILL)
+                try:
+                    self.continuous_process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    logger.error(
+                        "db_bench pid %s survived SIGKILL", self.continuous_process.pid
+                    )
         if self._continuous_log_handle:
             self._continuous_log_handle.close()
             self._continuous_log_handle = None
+
+    def _signal_group(self, sig) -> None:
+        """Signal db_bench's process group, falling back to the leader."""
+        pid = self.continuous_process.pid
+        try:
+            os.killpg(os.getpgid(pid), sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pass
 
     # ----------------------------------------------------------------- window
 
