@@ -1830,6 +1830,16 @@ def get_default_parameters() -> Dict[str, Union[int, str, bool]]:
         "min_granularity_ns": 3000000,
         "wakeup_granularity_ns": 4000000,
         "migration_cost_ns": 500000,
+
+        # NUMA balancing scan rate. Kernel defaults for
+        # /sys/kernel/debug/sched/numa_balancing/. Without these the knobs never
+        # enter initial_params, so a run neither records their baseline nor
+        # restores them, and a "fixed" control never touches them at all.
+        "numa_scan_delay_ms": 1000,
+        "numa_scan_period_min_ms": 1000,
+        "numa_scan_period_max_ms": 60000,
+        "numa_scan_size_mb": 256,
+        "numa_hot_threshold_ms": 1000,
         
         # DVFS/Turbo parameters
         "scaling_governor": "powersave",  # Default governor
