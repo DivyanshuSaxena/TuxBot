@@ -22,6 +22,7 @@ outside the run.
 | `min_granularity_ns` | Controls the minimum CFS slice and can trade context-switch overhead against latency. | `debugfs`; ns; global. | Getter supported; automatic best-effort restore on normal exit. | Needs mounted `debugfs`; missing path on unsupported kernels. | Example: `1000000` to `10000000`. Tune with `latency_ns` and `wakeup_granularity_ns`; avoid values larger than `latency_ns`. |
 | `wakeup_granularity_ns` | Controls how easily waking tasks preempt running tasks. | `debugfs`; ns; global. | Getter supported; automatic best-effort restore on normal exit. | Needs mounted `debugfs`; permission issue if not root. | Example: `1000000` to `8000000`. Tune with `latency_ns` and `min_granularity_ns`; too high can hurt interactive latency. |
 | `migration_cost_ns` | Influences how expensive CFS considers moving tasks across CPUs. | `debugfs`; ns; global. | Getter supported; automatic best-effort restore on normal exit. | Needs mounted `debugfs`; missing path on unsupported kernels. | Example: `100000` to `5000000`. Interacts with core pinning and workload locality. |
+| `base_slice_ns` | Sets the EEVDF base time slice, the quantum a task is granted before its eligibility is reconsidered. It is the successor to `min_granularity_ns`, which EEVDF removed in Linux 6.6. | `debugfs`; ns; global. | Getter supported via `param_paths`; automatic best-effort restore on normal exit. | Needs mounted `debugfs`. Absent before 6.6, where the CFS knobs above apply instead; registered only if the file exists. | Example: `100000` to `50000000`. The kernel's own default scales with CPU count, so read it back rather than assuming `3000000`. |
 | `numa_scan_delay_ms` | Delay before a task's first NUMA scan after it starts running. | `debugfs` `sched/numa_balancing/scan_delay_ms`; ms; global. | Getter supported via `param_paths`; automatic best-effort restore on normal exit. | Directory absent before Linux 6.8, where these were `sysctl` keys; needs mounted `debugfs`. | Example: `10` to `1000`. Interacts with the scan period bounds below. |
 | `numa_scan_period_min_ms` | Floor on the NUMA scan period: the fastest the kernel will rescan. | `debugfs` `sched/numa_balancing/scan_period_min_ms`; ms; global. | Getter supported; automatic best-effort restore. | As above. | Example: `10` to `1000`. Must stay below `numa_scan_period_max_ms`. |
 | `numa_scan_period_max_ms` | Ceiling on the NUMA scan period: the slowest rescan for a settled task. | `debugfs` `sched/numa_balancing/scan_period_max_ms`; ms; global. | Getter supported; automatic best-effort restore. | As above. | Example: `100` to `60000`. Must stay above `numa_scan_period_min_ms`. |
@@ -85,6 +86,9 @@ outside the run.
 
 - `latency_ns`, `min_granularity_ns`, and `wakeup_granularity_ns` should be
   tuned together; avoid semantically contradictory scheduler windows.
+- Those three and `base_slice_ns` are mutually exclusive in practice: a kernel
+  has either the CFS set or the EEVDF one, never both. Tuning a knob the running
+  kernel does not expose is an `Unknown parameter` failure, not a silent no-op.
 - `min_perf_pct` must not exceed `max_perf_pct`.
 - `cstate_max`, `turbo`, `min_perf_pct`, and `max_perf_pct` jointly shape
   latency, power, and thermal behavior.

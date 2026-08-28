@@ -81,6 +81,14 @@ PARAMETER_METADATA: Dict[str, Dict[str, Any]] = {
         "per_core": False,
         "description": "Migration cost in nanoseconds"
     },
+    # EEVDF replaced the CFS three above with this one in 6.6. Registered in
+    # ParameterManager.param_paths only if the running kernel exposes the file,
+    # the same way the NUMA scan-rate knobs below are.
+    "base_slice_ns": {
+        "type": "continuous",
+        "per_core": False,
+        "description": "EEVDF base time slice in nanoseconds"
+    },
     
     # DVFS/Turbo parameters
     "scaling_governor": {
@@ -521,13 +529,9 @@ class ParameterManager:
     def __init__(self):
         """Initialize parameter manager and mount debugfs if needed."""
         # Define parameter paths - easy to extend by adding new entries
-        self.param_paths = {
-            "latency_ns": "/sys/kernel/debug/sched/latency_ns",
-            "min_granularity_ns": "/sys/kernel/debug/sched/min_granularity_ns",
-            "wakeup_granularity_ns": "/sys/kernel/debug/sched/wakeup_granularity_ns",
-            "migration_cost_ns": "/sys/kernel/debug/sched/migration_cost_ns"
-        }
+        self.param_paths: Dict[str, str] = {}
         self._ensure_debugfs_mounted()
+        self._register_sched_paths()
         self._register_numa_balancing_paths()
 
         # Supplies the PID cpu_affinity re-tasksets. Not known at construction
@@ -546,6 +550,31 @@ class ParameterManager:
         the same soft-failure shape set_epp uses for an unsupported knob.
         """
         self._target_pid_provider = provider
+
+    # Scheduler knobs under /sys/kernel/debug/sched/. Which of these a kernel
+    # has depends on its scheduler: EEVDF removed the CFS three in 6.6 and
+    # added base_slice_ns in their place.
+    SCHED_FILES = ("latency_ns", "min_granularity_ns", "wakeup_granularity_ns",
+                   "migration_cost_ns", "base_slice_ns")
+
+    def _register_sched_paths(self) -> None:
+        """Register the scheduler knobs this kernel actually exposes.
+
+        Conditional for the same reason the NUMA ones are: registering a path
+        that is not there turns a knob the kernel lacks into a failed write,
+        which aborts a run at its initial parameters. Unregistered, it is an
+        "Unknown parameter" instead -- still a failure, but one naming the
+        actual problem.
+        """
+        base = "/sys/kernel/debug/sched"
+        for name in self.SCHED_FILES:
+            path = f"{base}/{name}"
+            if self._path_exists(path):
+                self.param_paths[name] = path
+        missing = [n for n in self.SCHED_FILES if n not in self.param_paths]
+        if missing:
+            logger.info(
+                "Scheduler knobs not present on this kernel: %s", ", ".join(missing))
 
     # Parameter name -> file under /sys/kernel/debug/sched/numa_balancing/.
     NUMA_BALANCING_FILES = {
@@ -735,6 +764,10 @@ class ParameterManager:
         """
         return self._set_parameter_internal("migration_cost_ns", value)
     
+    def set_base_slice_ns(self, value: int) -> bool:
+        """Set the EEVDF base time slice, in ns."""
+        return self._set_parameter_internal("base_slice_ns", value)
+
     def set_numa_scan_delay_ms(self, value: int) -> bool:
         """Set the NUMA scan delay, in ms."""
         return self._set_parameter_internal("numa_scan_delay_ms", value)
@@ -1970,6 +2003,12 @@ def get_default_parameters() -> Dict[str, Union[int, str, bool]]:
         "min_granularity_ns": 3000000,
         "wakeup_granularity_ns": 4000000,
         "migration_cost_ns": 500000,
+
+        # EEVDF base time slice. The kernel's own default scales with CPU count
+        # (2.8ms on a 64-core box under tunable_scaling=1), so this is a
+        # fallback for a knob the run could not read, not the machine's value --
+        # what gets restored is the snapshot taken before the run.
+        "base_slice_ns": 3000000,
 
         # NUMA balancing scan rate. Kernel defaults for
         # /sys/kernel/debug/sched/numa_balancing/. Without these the knobs never

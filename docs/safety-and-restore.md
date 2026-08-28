@@ -42,8 +42,10 @@ installation and plumbing failures appear quickly.
 Current restore is best-effort:
 
 - Scheduler debugfs values such as `latency_ns`, `min_granularity_ns`,
-  `wakeup_granularity_ns`, and `migration_cost_ns` can be snapshotted through
-  the current getter path and restored on normal exit.
+  `wakeup_granularity_ns`, `migration_cost_ns`, and `base_slice_ns` can be
+  snapshotted through the current getter path and restored on normal exit. Only
+  the ones the running kernel exposes are registered, so a 6.6+ host snapshots
+  `base_slice_ns` and a pre-6.6 one the CFS three.
 - Many sysfs, cpufreq, intel_pstate, idle-state, and sysctl values are applied
   through setters but are not guaranteed to have a per-run original-value
   snapshot in the current implementation.
