@@ -290,15 +290,23 @@ class SimpleOptimizer:
             
             logger.info(f"Iteration {iteration} reward: {reward:.4f} (metric: {self.config.optimization_metric}, goal: {self.config.optimization_goal})")
             
-            # Update best
+            guardrail_acted = bool(metrics.extra_metrics.get("guardrail_acted"))
+
+            # Update best. A window a guardrail restored the knobs in measured a
+            # mix of the tuned configuration and the restored one, and a
+            # violating window is not something to fall back to -- neither is a
+            # candidate. best_reward opens at +/-inf, so without this the first
+            # window always becomes best, violation and all.
             is_better = (
-                (self.config.optimization_goal == 'maximize' and reward > self.best_reward) or
-                (self.config.optimization_goal == 'minimize' and reward < self.best_reward)
+                not is_violated and not guardrail_acted and
+                ((self.config.optimization_goal == 'maximize' and reward > self.best_reward) or
+                 (self.config.optimization_goal == 'minimize' and reward < self.best_reward))
             )
             if is_better:
                 old_best = self.best_reward
                 self.best_reward = reward
                 self.best_parameters = self.current_parameters.copy()
+                self._publish_best_parameters()
                 logger.info(f"New best parameters: {self.best_parameters} with reward {self.best_reward:.4f} (previous best: {old_best:.4f})")
             else:
                 logger.debug(f"Reward {reward:.4f} is not better than current best {self.best_reward:.4f}")
@@ -320,6 +328,7 @@ class SimpleOptimizer:
                 },
                 "reward": reward,
                 "constraint_violated": is_violated,
+                "guardrail_acted": guardrail_acted,
                 "post_tuning_phase": in_post_tuning_phase,
             }
             
@@ -414,11 +423,13 @@ class SimpleOptimizer:
                 if self.benchmark and hasattr(self.benchmark, 'update_workload'):
                     self.benchmark.update_workload(iteration)
                 
+                self._publish_state("measuring")
                 metrics = self.benchmark.execute_window(
                     window_number=iteration,
                     duration=self.config.window_duration
                 )
-                
+                self._publish_state("settling")
+
                 if not metrics:
                     logger.warning(f"No metrics object from iteration {iteration}")
                     # Still need to get tuner response for next iteration
@@ -492,15 +503,19 @@ class SimpleOptimizer:
                 
                 logger.info(f"Iteration {iteration} reward: {reward:.4f} (metric: {self.config.optimization_metric}, goal: {self.config.optimization_goal})")
                 
-                # Update best
+                guardrail_acted = bool(metrics.extra_metrics.get("guardrail_acted"))
+
+                # Update best -- see the same guard in _run_in_window_mode.
                 is_better = (
-                    (self.config.optimization_goal == 'maximize' and reward > self.best_reward) or
-                    (self.config.optimization_goal == 'minimize' and reward < self.best_reward)
+                    not is_violated and not guardrail_acted and
+                    ((self.config.optimization_goal == 'maximize' and reward > self.best_reward) or
+                     (self.config.optimization_goal == 'minimize' and reward < self.best_reward))
                 )
                 if is_better:
                     old_best = self.best_reward
                     self.best_reward = reward
                     self.best_parameters = self.current_parameters.copy()
+                    self._publish_best_parameters()
                     logger.info(f"New best parameters: {self.best_parameters} with reward {self.best_reward:.4f} (previous best: {old_best:.4f})")
                 else:
                     logger.debug(f"Reward {reward:.4f} is not better than current best {self.best_reward:.4f}")
@@ -522,6 +537,7 @@ class SimpleOptimizer:
                     },
                     "reward": reward,
                     "constraint_violated": is_violated,
+                    "guardrail_acted": guardrail_acted,
                     "post_tuning_phase": in_post_tuning_phase,
                 }
                 
@@ -593,10 +609,12 @@ class SimpleOptimizer:
         
         def run_window():
             try:
+                self._publish_state("measuring")
                 metrics_result[0] = self.benchmark.execute_window(
                     window_number=iteration,
                     duration=window_duration
                 )
+                self._publish_state("settling")
             except Exception as e:
                 exception_result[0] = e
         
@@ -1003,10 +1021,39 @@ class SimpleOptimizer:
     
     def _settle(self, reason: str) -> None:
         """Wait for a knob change to take effect before the next window measures it."""
+        self._publish_state("settling")
         seconds = getattr(self.config, "settle_seconds", 0)
         if seconds > 0:
             logger.info(f"Settling {seconds}s after {reason}")
             time.sleep(seconds)
+
+    # Where the OS guardrails and this process meet: two files under
+    # GDL_RUN_DIR, because neither knows the other's pid. The state file scopes
+    # the guardrails to the windows this run is actually scoring; the best file
+    # is what their corrective action restores to.
+    GUARDRAIL_RUN_DIR = os.environ.get("GDL_RUN_DIR", "/run/gdl")
+
+    def _write_run_file(self, name: str, text: str) -> None:
+        path = os.path.join(self.GUARDRAIL_RUN_DIR, name)
+        try:
+            os.makedirs(self.GUARDRAIL_RUN_DIR, exist_ok=True)
+            with open(path + ".tmp", "w") as f:
+                f.write(text)
+            os.replace(path + ".tmp", path)   # a guardrail may read at any moment
+        except OSError as e:
+            logger.warning(f"Could not write {path}: {e}")
+
+    def _publish_state(self, state: str) -> None:
+        """`measuring` while a window is being scored, `settling` otherwise."""
+        self._write_run_file("tuxbot_state", state)
+
+    def _publish_best_parameters(self) -> None:
+        """Publish best_parameters for the guardrails' fallback to restore.
+
+        Written on every improvement rather than at the end of the run, because
+        that is when the fallback needs it.
+        """
+        self._write_run_file("tuxbot_best.json", json.dumps(self.best_parameters))
 
     def _apply_tuner_parameters(self, tuner_response: 'TunerResponse', iteration: int, duration_s: float = 0.0) -> Optional[Dict[str, Any]]:
         """Apply tuner parameters and return timing information.

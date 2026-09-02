@@ -601,6 +601,11 @@ sleep 1 &&
             system_metrics_dict["numa_metrics"] = numa_metrics
             metrics.extra_metrics.update(numa_metrics)
 
+        guardrail_metrics = self._guardrail_window_delta()
+        if guardrail_metrics:
+            system_metrics_dict["guardrail_metrics"] = guardrail_metrics
+            metrics.extra_metrics.update(guardrail_metrics)
+
         metrics.extra_metrics["system_metrics"] = system_metrics_dict
         
         # Add perf metrics to extra_metrics and system_metrics
@@ -669,6 +674,47 @@ sleep 1 &&
                 100.0 * delta.get("numa_hint_faults_local", 0) / hint_faults
             )
         return delta
+
+    # The OS guardrails' own daemon logs, one per spec, named by
+    # GDL_GUARDRAIL_LOGS. Each writes a `[SET] tuxbot_knobs := ...` line when it
+    # restores the knobs, flushed per line, so counting the lines a window added
+    # is the whole interface -- neither process knows the other's pid.
+    _GUARDRAIL_ACTION = "[SET] tuxbot_knobs"
+
+    def _guardrail_logs(self) -> List[str]:
+        return [p for p in os.environ.get("GDL_GUARDRAIL_LOGS", "").split(",") if p]
+
+    def _read_guardrail_logs(self) -> Dict[str, int]:
+        """Line count of each guardrail log now. Absent means no guardrail is
+        running, which is the unguarded arm rather than an error."""
+        counts = {}
+        for path in self._guardrail_logs():
+            try:
+                with open(path, errors="replace") as f:
+                    counts[path] = sum(1 for _ in f)
+            except OSError:
+                counts[path] = 0
+        return counts
+
+    def _guardrail_window_delta(self) -> Dict[str, Any]:
+        """What the guardrails did during this window.
+
+        `guardrail_acted` is the flag the optimizer keys off: the knobs moved
+        under it, so the window is not a clean measurement of the configuration
+        it applied.
+        """
+        start = getattr(self, "_guardrail_window_start", None)
+        if not start:
+            return {}
+        fires = 0
+        for path, first in start.items():
+            try:
+                with open(path, errors="replace") as f:
+                    new_lines = f.readlines()[first:]
+            except OSError:
+                continue
+            fires += sum(1 for line in new_lines if self._GUARDRAIL_ACTION in line)
+        return {"guardrail_fires": fires, "guardrail_acted": fires > 0}
 
     def _read_rapl_socket_energy(self, socket: int = 0) -> Optional[int]:
         """Read RAPL energy for a specific socket (package).
@@ -1095,6 +1141,7 @@ sleep 1 &&
         """
         metrics_file = os.path.join(self.results_dir, f"window_{window_number}_metrics.json")
         self._numa_window_start = self._read_numa_vmstat()
+        self._guardrail_window_start = self._read_guardrail_logs()
         window_start_time = time.time()
         
         # Start collection thread (one thread per window)
