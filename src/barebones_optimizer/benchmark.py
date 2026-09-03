@@ -677,8 +677,9 @@ sleep 1 &&
 
     # The OS guardrails' own daemon logs, one per spec, named by
     # GDL_GUARDRAIL_LOGS. Each writes a `[SET] tuxbot_knobs := ...` line when it
-    # restores the knobs, flushed per line, so counting the lines a window added
-    # is the whole interface -- neither process knows the other's pid.
+    # restores the knobs, flushed per line, so a byte offset at window open and
+    # a seek to it at close is the whole interface -- neither process knows the
+    # other's pid.
     _GUARDRAIL_ACTION = "[SET] tuxbot_knobs"
 
     def _guardrail_logs(self) -> List[str]:
