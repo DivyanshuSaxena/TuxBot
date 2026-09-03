@@ -41,6 +41,10 @@ class GapbsBenchmark(BenchmarkInterface):
         self.scale = getattr(config, 'gapbs_scale', 27)
         self.iterations = getattr(config, 'gapbs_iterations', 1)
         self.trials = getattr(config, 'gapbs_trials', 100000)
+        self.source = getattr(config, 'gapbs_source', -1)
+        self.graph_file = os.path.expanduser(
+            getattr(config, 'gapbs_graph_file', '') or ''
+        )
 
         if self.kernel not in KERNELS:
             raise ValueError(
@@ -71,15 +75,37 @@ class GapbsBenchmark(BenchmarkInterface):
         return path
 
     def _build_command(self) -> List[str]:
+        cmd = [self._resolve_binary()]
+
+        # GAPBS's Builder takes -f over -g, so pass one or the other. A
+        # serialized graph is byte-identical run to run and skips the ~81s
+        # generation at scale 27.
+        if self.graph_file:
+            if not os.path.isfile(self.graph_file):
+                raise FileNotFoundError(
+                    f"gapbs_graph_file {self.graph_file} does not exist. Build "
+                    f"it with 'converter -g <scale> -b <file>' in the gapbs "
+                    f"checkout, or unset gapbs_graph_file to generate instead."
+                )
+            cmd += ["-f", self.graph_file]
+        else:
+            cmd += ["-g", str(self.scale)]
+
         # -n is deliberately large: the process must outlast every window and is
         # killed at cleanup, so overestimating costs nothing while running out
         # mid-run fails the run.
-        cmd = [
-            self._resolve_binary(),
-            "-g", str(self.scale),
+        cmd += [
             "-i", str(self.iterations),
             "-n", str(self.trials),
         ]
+
+        # Without -r, GAPBS advances one source vertex per trial from a
+        # kRandSeed-seeded sequence, so trials do different amounts of work and
+        # per-window latency carries that spread. Pinning the source makes every
+        # trial identical. Note the kernel takes the given source as-is, without
+        # the non-zero-out-degree check the random path applies.
+        if self.source >= 0:
+            cmd += ["-r", str(self.source)]
 
         # GAPBS prints through std::cout, which block-buffers into a file. A
         # trial line is ~40 bytes, so without this a window sees no trial until
@@ -96,7 +122,7 @@ class GapbsBenchmark(BenchmarkInterface):
         """Any run of this kernel that is not the one we started."""
         try:
             found = subprocess.run(
-                ["pgrep", "-f", f"{self.gapbs_dir}/{self.kernel} -g"],
+                ["pgrep", "-f", f"{self.gapbs_dir}/{self.kernel} -"],
                 capture_output=True, text=True,
             ).stdout.split()
         except (OSError, ValueError):
@@ -300,5 +326,7 @@ class GapbsBenchmark(BenchmarkInterface):
             "trial_time_max_s": max(trials) if trials else None,
             "gapbs_kernel": self.kernel,
             "gapbs_scale": self.scale,
+            "gapbs_source": self.source,
+            "gapbs_graph_file": self.graph_file or None,
         })
         return metrics

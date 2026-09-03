@@ -39,6 +39,8 @@ class SimpleConfig:
     gapbs_scale: int = 27
     gapbs_iterations: int = 1
     gapbs_trials: int = 100000
+    gapbs_source: int = -1
+    gapbs_graph_file: str = ""
 
     # BenchBase TPCC
     benchbase_jar_path: str = "deps/benchbase/target/benchbase-postgres/benchbase.jar"
@@ -356,6 +358,11 @@ class SimpleConfig:
                 raise ValueError("gapbs_trials must be positive")
             if self.gapbs_iterations <= 0:
                 raise ValueError("gapbs_iterations must be positive")
+            if self.gapbs_source < -1:
+                raise ValueError(
+                    "gapbs_source must be a vertex id, or -1 for GAPBS's own "
+                    "source sequence"
+                )
 
         if self.benchmark == "tpcc":
             if not self.benchbase_jar_path:
