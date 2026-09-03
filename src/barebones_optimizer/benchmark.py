@@ -677,24 +677,24 @@ sleep 1 &&
 
     # The OS guardrails' own daemon logs, one per spec, named by
     # GDL_GUARDRAIL_LOGS. Each writes a `[SET] tuxbot_knobs := ...` line when it
-    # restores the knobs, flushed per line, so counting the lines a window added
-    # is the whole interface -- neither process knows the other's pid.
+    # restores the knobs, flushed per line, so a byte offset at window open and
+    # a seek to it at close is the whole interface -- neither process knows the
+    # other's pid.
     _GUARDRAIL_ACTION = "[SET] tuxbot_knobs"
 
     def _guardrail_logs(self) -> List[str]:
         return [p for p in os.environ.get("GDL_GUARDRAIL_LOGS", "").split(",") if p]
 
     def _read_guardrail_logs(self) -> Dict[str, int]:
-        """Line count of each guardrail log now. Absent means no guardrail is
+        """Byte offset of each guardrail log's end. Absent means no guardrail is
         running, which is the unguarded arm rather than an error."""
-        counts = {}
+        offsets = {}
         for path in self._guardrail_logs():
             try:
-                with open(path, errors="replace") as f:
-                    counts[path] = sum(1 for _ in f)
+                offsets[path] = os.path.getsize(path)
             except OSError:
-                counts[path] = 0
-        return counts
+                offsets[path] = 0
+        return offsets
 
     def _guardrail_window_delta(self) -> Dict[str, Any]:
         """What the guardrails did during this window.
@@ -706,14 +706,19 @@ sleep 1 &&
         start = getattr(self, "_guardrail_window_start", None)
         if not start:
             return {}
+        marker = self._GUARDRAIL_ACTION.encode()
         fires = 0
-        for path, first in start.items():
+        for path, offset in start.items():
             try:
-                with open(path, errors="replace") as f:
-                    new_lines = f.readlines()[first:]
+                with open(path, "rb") as f:
+                    # A log shorter than its offset was rotated or truncated, so
+                    # the offset names nothing and the whole file is the window.
+                    if os.fstat(f.fileno()).st_size < offset:
+                        offset = 0
+                    f.seek(offset)
+                    fires += sum(1 for line in f if marker in line)
             except OSError:
                 continue
-            fires += sum(1 for line in new_lines if self._GUARDRAIL_ACTION in line)
         return {"guardrail_fires": fires, "guardrail_acted": fires > 0}
 
     def _read_rapl_socket_energy(self, socket: int = 0) -> Optional[int]:

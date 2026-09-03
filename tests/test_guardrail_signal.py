@@ -62,6 +62,32 @@ def test_a_quiet_window_did_not_act(bench):
                                            "guardrail_acted": False}
 
 
+def test_a_rotated_log_is_read_whole(bench):
+    """A log shorter than its offset was rotated under the window, so the
+    offset names nothing and every fire in what is there is this window's."""
+    b, log = bench
+    fire(log, 4)
+    b._guardrail_window_start = b._read_guardrail_logs()
+    log.write_text("")                 # rotated
+    fire(log, 2)
+    assert b._guardrail_window_delta() == {"guardrail_fires": 2,
+                                           "guardrail_acted": True}
+
+
+def test_the_window_read_is_independent_of_the_backlog(bench):
+    """The daemon appends an [obs] record every tick, so the log is hundreds of
+    MB by the end of a sweep; a window reads only what it added."""
+    b, log = bench
+    with open(log, "a") as f:
+        f.write("[obs] " + "x" * 4_000_000 + "\n")
+    b._guardrail_window_start = b._read_guardrail_logs()
+    fire(log, 1)
+    with open(log, "rb") as f:
+        f.seek(b._guardrail_window_start[str(log)])
+        assert len(f.read()) < 1000
+    assert b._guardrail_window_delta()["guardrail_fires"] == 1
+
+
 def test_no_guardrail_configured_reports_nothing(tmp_path, monkeypatch):
     """The unguarded arm, not an error."""
     monkeypatch.delenv("GDL_GUARDRAIL_LOGS", raising=False)
