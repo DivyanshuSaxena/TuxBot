@@ -28,6 +28,15 @@ WINDOW_TRIALS = "gapbs_trials.txt"
 # Kernels that take a source vertex and the ones that do not; all take -g/-n.
 KERNELS = ("bc", "bfs", "cc", "cc_sv", "pr", "pr_spmv", "sssp", "tc")
 
+# -r is parsed by every kernel (it is CLApp-level) but only these three read
+# it. Passing it to the others is accepted and silently ignored, which would
+# make a config look pinned when it is not.
+SOURCE_KERNELS = ("bc", "bfs", "sssp")
+
+# -t exists only on CLPageRank, so passing it to any other kernel is an
+# unrecognized option and the process exits instead of running.
+TOLERANCE_KERNELS = ("pr", "pr_spmv")
+
 
 class GapbsBenchmark(BenchmarkInterface):
     """A GAPBS kernel run continuously over a generated graph."""
@@ -37,7 +46,10 @@ class GapbsBenchmark(BenchmarkInterface):
 
         self.benchmark_info: BenchmarkInfo = BenchmarkType.from_string(config.benchmark).value
         self.gapbs_dir = os.path.expanduser(getattr(config, 'gapbs_dir', '~/gapbs'))
-        self.kernel = getattr(config, 'gapbs_kernel', 'bc')
+        # The benchmark name carries the default kernel (gapbs -> bc,
+        # gapbs_pr -> pr); gapbs_kernel overrides it.
+        self.kernel = (getattr(config, 'gapbs_kernel', None)
+                       or self.benchmark_info.base_command[0])
         self.scale = getattr(config, 'gapbs_scale', 27)
         self.iterations = getattr(config, 'gapbs_iterations', 1)
         self.trials = getattr(config, 'gapbs_trials', 100000)
@@ -45,6 +57,7 @@ class GapbsBenchmark(BenchmarkInterface):
         self.graph_file = os.path.expanduser(
             getattr(config, 'gapbs_graph_file', '') or ''
         )
+        self.tolerance = getattr(config, 'gapbs_tolerance', None)
 
         if self.kernel not in KERNELS:
             raise ValueError(
@@ -105,7 +118,27 @@ class GapbsBenchmark(BenchmarkInterface):
         # trial identical. Note the kernel takes the given source as-is, without
         # the non-zero-out-degree check the random path applies.
         if self.source >= 0:
-            cmd += ["-r", str(self.source)]
+            if self.kernel in SOURCE_KERNELS:
+                cmd += ["-r", str(self.source)]
+            else:
+                logger.warning(
+                    "gapbs_source is set but %s takes no source vertex; "
+                    "every trial already does the same work", self.kernel
+                )
+
+        # -t 0 never satisfies the early-exit test, so a trial runs exactly
+        # gapbs_iterations passes. Left unset, PageRank stops when its error
+        # falls under the tolerance, and that error is a float reduction over a
+        # dynamic schedule -- reproducible to within its last bits, but not
+        # guaranteed to break on the same iteration every trial.
+        if self.tolerance is not None:
+            if self.kernel in TOLERANCE_KERNELS:
+                cmd += ["-t", str(self.tolerance)]
+            else:
+                logger.warning(
+                    "gapbs_tolerance is set but %s takes no -t; ignoring",
+                    self.kernel
+                )
 
         # GAPBS prints through std::cout, which block-buffers into a file. A
         # trial line is ~40 bytes, so without this a window sees no trial until
@@ -327,6 +360,7 @@ class GapbsBenchmark(BenchmarkInterface):
             "gapbs_kernel": self.kernel,
             "gapbs_scale": self.scale,
             "gapbs_source": self.source,
+            "gapbs_tolerance": self.tolerance,
             "gapbs_graph_file": self.graph_file or None,
         })
         return metrics

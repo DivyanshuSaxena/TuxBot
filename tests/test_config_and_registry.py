@@ -13,7 +13,9 @@ from barebones_optimizer.main_helpers import create_tuner_from_config, create_tr
 
 
 def test_public_registry_only_lists_v1_benchmarks():
-    assert BenchmarkType.list_all() == ["sysbench_cpu", "db_bench", "gapbs", "tpcc"]
+    assert BenchmarkType.list_all() == [
+        "sysbench_cpu", "db_bench", "gapbs", "gapbs_pr", "tpcc"
+    ]
     with pytest.raises(ValueError):
         BenchmarkType.from_string("unsupported_workload")
 

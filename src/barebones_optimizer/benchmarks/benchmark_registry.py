@@ -50,6 +50,15 @@ class BenchmarkType(Enum):
         description="GAP Benchmark Suite graph kernel over a generated graph",
     )
 
+    GAPBS_PR = BenchmarkInfo(
+        name="gapbs_pr",
+        script="",
+        requires_setup=False,
+        requires_cleanup=False,
+        base_command=["pr"],
+        description="GAP Benchmark Suite PageRank over a generated graph",
+    )
+
     TPCC = BenchmarkInfo(
         name="tpcc",
         script="",

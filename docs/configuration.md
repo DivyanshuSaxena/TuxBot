@@ -56,7 +56,10 @@ not reset between iterations. The interval CSV carries throughput only, so
 
 ## GAPBS Fields
 
-These fields apply only when `benchmark` is `gapbs`.
+These fields apply when `benchmark` is `gapbs` or `gapbs_pr`. The two differ
+only in the kernel they default to -- `bc` and `pr` -- so they are separate
+benchmark names rather than one name with a flag, letting a results directory
+and a guardrail spec key on the workload actually being run.
 
 One kernel run covers the whole session and each window counts the trials that
 finished inside it. Generating and building the graph costs several times what
@@ -65,10 +68,13 @@ a trial does, so both happen once before the first window.
 | Field | Meaning |
 | --- | --- |
 | `gapbs_dir` | GAPBS checkout holding the built kernels. Default is `~/gapbs`. |
-| `gapbs_kernel` | Kernel to run: `bc`, `bfs`, `cc`, `cc_sv`, `pr`, `pr_spmv`, `sssp` or `tc`. Default is `bc`. |
+| `gapbs_kernel` | Kernel to run: `bc`, `bfs`, `cc`, `cc_sv`, `pr`, `pr_spmv`, `sssp` or `tc`. Defaults to the benchmark's own kernel (`bc` for `gapbs`, `pr` for `gapbs_pr`). |
 | `gapbs_scale` | Kronecker graph scale (`-g`). Default is `27`, about 37GB, which exceeds one NUMA node on a 4x32GB machine and so must span nodes. |
 | `gapbs_iterations` | Per-trial kernel iterations (`-i`). Default is `1`. Raising it makes a trial longer, not the graph bigger. |
 | `gapbs_trials` | Trials to run (`-n`). Default is `100000`: the process must outlast every window and is killed at cleanup, so overestimating costs nothing while running out mid-run fails the run. |
+| `gapbs_source` | Source vertex (`-r`). Default `-1` leaves GAPBS picking one per trial from its seeded sequence, so trials do different amounts of work; pinning it makes every trial identical. Read only by `bc`, `bfs` and `sssp` -- set for any other kernel it is ignored with a warning. Note the kernel takes the given vertex as-is, skipping the non-zero-out-degree check it applies when picking, so an ill-chosen one gives degenerate near-instant trials. |
+| `gapbs_graph_file` | Serialized graph to load (`-f`) instead of generating one. `Builder` takes the file over `gapbs_scale`, so the two are exclusive. Byte-identical between runs and skips generation; a missing file fails at startup rather than mid-run. |
+| `gapbs_tolerance` | PageRank early-exit tolerance (`-t`). Read only by `pr` and `pr_spmv`; ignored with a warning elsewhere, since no other kernel accepts the option. `0` never satisfies the test, so a trial runs exactly `gapbs_iterations` passes rather than stopping on a float reduction whose value depends on scheduling order. |
 
 ## TPCC / BenchBase Fields
 

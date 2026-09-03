@@ -70,7 +70,7 @@ def create_benchmark(config: SimpleConfig):
         return SysbenchBenchmark(config)
     if benchmark_name == "db_bench":
         return DbBenchBenchmark(config)
-    if benchmark_name == "gapbs":
+    if benchmark_name in ("gapbs", "gapbs_pr"):
         return GapbsBenchmark(config)
     if benchmark_name == "tpcc":
         return BenchBaseBenchmark(config)

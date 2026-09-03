@@ -35,11 +35,12 @@ class SimpleConfig:
 
     # GAPBS graph kernels
     gapbs_dir: str = "~/gapbs"
-    gapbs_kernel: str = "bc"
+    gapbs_kernel: Optional[str] = None
     gapbs_scale: int = 27
     gapbs_iterations: int = 1
     gapbs_trials: int = 100000
     gapbs_source: int = -1
+    gapbs_tolerance: Optional[float] = None
     gapbs_graph_file: str = ""
 
     # BenchBase TPCC
@@ -351,7 +352,7 @@ class SimpleConfig:
             if not self.db_bench_db:
                 raise ValueError("db_bench requires db_bench_db")
 
-        if self.benchmark == "gapbs":
+        if self.benchmark in ("gapbs", "gapbs_pr"):
             if self.gapbs_scale <= 0:
                 raise ValueError("gapbs_scale must be positive")
             if self.gapbs_trials <= 0:
@@ -363,6 +364,8 @@ class SimpleConfig:
                     "gapbs_source must be a vertex id, or -1 for GAPBS's own "
                     "source sequence"
                 )
+            if self.gapbs_tolerance is not None and self.gapbs_tolerance < 0:
+                raise ValueError("gapbs_tolerance must be non-negative")
 
         if self.benchmark == "tpcc":
             if not self.benchbase_jar_path:
