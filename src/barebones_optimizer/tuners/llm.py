@@ -645,7 +645,33 @@ OPTIMIZATION STRATEGY:
             )
         else:
             task = f"TASK: Optimize OS parameters to {optimization_goal} {optimization_metric}."
-        
+
+        # Guardrails. Gated on the same env var benchmark.py reads to know
+        # guardrails are attached, not a config field -- a run with none
+        # attached gets no section and an unchanged prompt.
+        guardrails_section = ""
+        if os.environ.get("GDL_GUARDRAIL_LOGS"):
+            guardrails_section = (
+                "\nGUARDRAILS:\n"
+                "- A separate safety monitor watches NUMA placement quality, "
+                "independently of your tuning. It checks two things every tick: "
+                "(1) whether tasks are sitting queued for a busy local CPU while "
+                "most of their memory is on a remote NUMA node -- CPU wait with "
+                "nowhere better to run -- and (2) whether tasks the scheduler's "
+                "load balancer just migrated are still majority-remote afterwards, "
+                "meaning the migration didn't actually improve memory locality. "
+                "Either one is a sign the current NUMA scan-rate / migration-cost "
+                "settings are fighting the workload's placement.\n"
+                "- If it detects a problem it restores a known-good configuration "
+                "on the spot, overriding whatever parameters were in effect at the time.\n"
+                '- A "[GUARDRAIL FIRED ...]" tag on a trial means that trial\'s '
+                "reward reflects a mix of your chosen parameters and this override, "
+                "not your configuration alone -- treat it as a less reliable "
+                "measurement, not necessarily a bad configuration.\n"
+                "- If firings recur around the same region of parameter space, "
+                "treat that as a sign that region is unsafe and steer away from it.\n"
+            )
+
         # Note about additional metrics
         if self._additional_metrics:
             use_indirect = getattr(self.config, 'use_indirect_optimization', False)
@@ -746,6 +772,7 @@ ADDITIONAL USER INSTRUCTIONS:
 {role_description}
 {task}
 {constraints_section}
+{guardrails_section}
 {measurements}
 {gist_section}
 TUNABLE PARAMETERS:
@@ -921,6 +948,26 @@ SUMMARY:"""
             return "N/A"
         return f"{reward:,.2f}"
 
+    def _format_guardrail_note(self, fires, acted) -> str:
+        """Inline history/Top-N tag for a trial a guardrail fired during.
+
+        Deliberately distinct from the constraint-violated tag: a guardrail
+        firing doesn't distort the reward (unlike the constraint path's 10x
+        penalty in optimizer.py) -- it just means the measurement is a mix of
+        the proposed configuration and a corrective restore, not a rejection.
+        """
+        if not acted:
+            return ""
+        return f" [GUARDRAIL FIRED x{fires}: config partially overridden]"
+
+    def _format_guardrail_block(self, fires, acted) -> str:
+        """Current-iteration guardrail status, parallel to constraint_block."""
+        if not acted:
+            return ""
+        return (f"Guardrail status: fired {fires}x this window - the applied "
+                f"parameters were partially overridden by a corrective restore, "
+                f"so this reward may not reflect your proposed configuration alone.\n")
+
     def _format_history_entry(self, entry: Dict[str, Any], show_additional_metrics: bool = True) -> str:
         """Format a single history entry with details and auto-detected agent tag."""
         # Use helper for params
@@ -987,6 +1034,12 @@ SUMMARY:"""
                     if violated:
                         constraint_note = f" [{self.config.constraint_metric}={val:.2f} {op_symbol} {self.config.constraint_threshold:.2f} CONSTRAINT VIOLATED]"
 
+        # Guardrail tag. Top-level key is what optimizer.py's dual-loop history
+        # writes; fall back to the nested copy for a single-loop-shaped entry.
+        entry_guardrail_acted = entry.get('guardrail_acted', entry.get('metrics', {}).get('guardrail_acted'))
+        guardrail_note = self._format_guardrail_note(
+            entry.get('metrics', {}).get('guardrail_fires'), entry_guardrail_acted)
+
         # Convergence tag
         convergence_note = ""
         if LLM_INCLUDE_CONVERGENCE_IN_HISTORY and entry.get('converged') is not None:
@@ -1006,7 +1059,7 @@ SUMMARY:"""
 
         # Build line
         call_id = entry.get('iteration', '?')
-        line = f"  * iter {call_id}{agent_tag}: {self.optimization_metric}={reward_str}{additional_metrics_str} with {param_str}{constraint_note}{convergence_note}"
+        line = f"  * iter {call_id}{agent_tag}: {self.optimization_metric}={reward_str}{additional_metrics_str} with {param_str}{constraint_note}{guardrail_note}{convergence_note}"
         
         # Justification
         if LLM_INCLUDE_JUSTIFICATION_IN_HISTORY:
@@ -1125,11 +1178,16 @@ SUMMARY:"""
                 f"{constraint_val_str} (threshold {threshold_text}) [{status}]\n"
             )
 
+        # Guardrail status for CURRENT iteration, parallel to constraint_block.
+        guardrail_block = self._format_guardrail_block(
+            metrics.extra_metrics.get('guardrail_fires'),
+            metrics.extra_metrics.get('guardrail_acted'))
+
         # Aggregation interval info
         aggregation_info = ""
         if aggregation_interval_s is not None:
             aggregation_info = f"(mean over past {aggregation_interval_s:.1f}s)"
-        
+
         # Build combined history (all entries tagged with [Actor]/[Speculator])
         all_history = list(compressed_history[-10:]) + list(recent_history)
         
@@ -1167,8 +1225,9 @@ SUMMARY:"""
             if hide_primary_metric:
                 msg += "Primary optimization metric is hidden for Speculator in this run type; rely on provided observability metrics.\n"
             msg += constraint_block
+            msg += guardrail_block
             msg += f"\nPlease provide your analysis and the next configuration for iteration #{iteration + 1}."
-            
+
         elif self.agent_type == "reasoning": # Actor (Reasoning)
             msg += f"Update for Actor\n"
             msg += history_block
@@ -1177,7 +1236,8 @@ SUMMARY:"""
             additional_str = self._format_additional_metrics(metrics)
             msg += f"Latest Result for call #{iteration}: {current_param_str} -> {self.optimization_metric}={reward_str}{additional_str} {aggregation_info}\n"
             msg += constraint_block
-            
+            msg += guardrail_block
+
             msg += f"\nPlease provide your analysis of the trend and the next configuration for call #{iteration + 1}."
 
         else: # Single agent (fallback if history is provided)
@@ -1188,6 +1248,7 @@ SUMMARY:"""
             additional_str = self._format_additional_metrics(metrics)
             msg += f"Latest Result: {current_param_str} -> {self.optimization_metric}={reward_str}{additional_str} {aggregation_info}\n"
             msg += constraint_block
+            msg += guardrail_block
             msg += f"\nPlease provide your analysis and the next configuration for iteration #{iteration + 1}."
 
         return msg
@@ -1252,6 +1313,11 @@ SUMMARY:"""
                 f"{constraint_value:,.2f} (threshold {threshold_text}) [{status}]\n"
             )
 
+        # Guardrail status for CURRENT iteration, parallel to constraint_block.
+        guardrail_block = self._format_guardrail_block(
+            metrics.extra_metrics.get('guardrail_fires'),
+            metrics.extra_metrics.get('guardrail_acted'))
+
         # Parameter ranges as short bullets
         param_ranges_lines = []
         for name, pr in self.parameter_ranges.items():
@@ -1276,7 +1342,7 @@ SUMMARY:"""
 Current iteration:
 - Iteration #{iteration}: {self.optimization_metric}={self._format_reward(reward)}{self._format_additional_metrics(metrics)}{aggregation_info}
 - Parameters used: {params_str}
-{constraint_block}Next step:
+{constraint_block}{guardrail_block}Next step:
 - Propose parameters for iteration #{iteration + 1}.
 - Return a JSON object with:
   - Only the parameters you want to change
@@ -1418,9 +1484,11 @@ Valid parameter ranges:
                     c_metric = getattr(self.config, 'constraint_metric', 'CONSTRAINT')
                     details = e.get('constraint_detail', '')
                     constraint_note = f" [{c_metric}={details} CONSTRAINT VIOLATED]"
-                
+                guardrail_note = self._format_guardrail_note(
+                    e.get('metrics', {}).get('guardrail_fires'), e.get('metrics', {}).get('guardrail_acted'))
+
                 line = (f"  * iter {e['iteration']}: {metric}={e['reward']:,.2f} "
-                        f"with {self._short_params_for_history(e['params'])}{constraint_note}")
+                        f"with {self._short_params_for_history(e['params'])}{constraint_note}{guardrail_note}")
                 
                 if LLM_INCLUDE_JUSTIFICATION_IN_HISTORY and e.get('justification'):
                     line += f"\n    Justification: {e['justification']}"
@@ -1434,7 +1502,9 @@ Valid parameter ranges:
                 c_metric = getattr(self.config, 'constraint_metric', 'CONSTRAINT')
                 details = e.get('constraint_detail', '')
                 constraint_note = f" [{c_metric}={details} CONSTRAINT VIOLATED]"
-            
+            guardrail_note = self._format_guardrail_note(
+                e.get('metrics', {}).get('guardrail_fires'), e.get('metrics', {}).get('guardrail_acted'))
+
             # Determine if we should show additional metrics for this entry
             is_last = (idx == len(recent) - 1)
             is_second_to_last = (idx == len(recent) - 2)
@@ -1464,7 +1534,7 @@ Valid parameter ranges:
             if LLM_INCLUDE_CONVERGENCE_IN_HISTORY and e.get('converged') is not None:
                 convergence_note = f" (Converged = {e['converged']})"
             line = (f"  * iter {e['iteration']}: {metric}={reward_str}{additional_metrics_str} "
-                    f"with {self._short_params_for_history(e['params'])}{constraint_note}{convergence_note}")
+                    f"with {self._short_params_for_history(e['params'])}{constraint_note}{guardrail_note}{convergence_note}")
             
             if LLM_INCLUDE_JUSTIFICATION_IN_HISTORY and e.get('justification'):
                 line += f"\n    Justification: {e['justification']}"
@@ -1541,7 +1611,10 @@ Valid parameter ranges:
             reward_str = self._format_reward(e.get('reward'))
             # Show only tunable params
             params_str = self._short_params_for_history(e['parameters'] if 'parameters' in e else e.get('params', {}))
-            lines.append(f"{i}. Iter {e['iteration']}: {params_str} -> {metric}={reward_str}")
+            guardrail_note = self._format_guardrail_note(
+                e.get('metrics', {}).get('guardrail_fires'),
+                e.get('guardrail_acted', e.get('metrics', {}).get('guardrail_acted')))
+            lines.append(f"{i}. Iter {e['iteration']}: {params_str} -> {metric}={reward_str}{guardrail_note}")
             
         return "\n".join(lines) + "\n"
 
