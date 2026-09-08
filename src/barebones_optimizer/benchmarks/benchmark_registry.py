@@ -41,6 +41,19 @@ class BenchmarkType(Enum):
         description="RocksDB db_bench against a pre-built database",
     )
 
+    # Its own name rather than a db_bench option, same reason GAPBS_PR is not
+    # a gapbs_kernel: the results filename, logs directory and guardrail spec
+    # directory all key on the benchmark name, and the two would overwrite
+    # each other sharing one.
+    DB_BENCH_RWM = BenchmarkInfo(
+        name="db_bench_rwm",
+        script="",
+        requires_setup=False,
+        requires_cleanup=False,
+        base_command=["db_bench"],
+        description="RocksDB db_bench readwhilemerging against a pre-built database",
+    )
+
     GAPBS = BenchmarkInfo(
         name="gapbs",
         script="",

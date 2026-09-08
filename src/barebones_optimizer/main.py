@@ -68,7 +68,7 @@ def create_benchmark(config: SimpleConfig):
     benchmark_name = BenchmarkType.from_string(config.benchmark).value.name
     if benchmark_name == "sysbench_cpu":
         return SysbenchBenchmark(config)
-    if benchmark_name == "db_bench":
+    if benchmark_name in ("db_bench", "db_bench_rwm"):
         return DbBenchBenchmark(config)
     if benchmark_name in ("gapbs", "gapbs_pr"):
         return GapbsBenchmark(config)

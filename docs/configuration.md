@@ -49,7 +49,8 @@ not reset between iterations. The interval CSV carries throughput only, so
 | --- | --- |
 | `db_bench_binary` | Path to the built `db_bench`. Default is `~/rocksdb/db_bench`. A bare name is looked up on `PATH`. |
 | `db_bench_db` | Existing RocksDB database directory. Built once with `--benchmarks=fillseq`, never by a tuning run. Default is `/mydata/rocksdb`. |
-| `db_bench_benchmarks` | Value passed to `--benchmarks`. Default is `readwhilewriting`. |
+| `db_bench_benchmarks` | Value passed to `--benchmarks`. Defaults to the benchmark's own target (`readwhilewriting` for `db_bench`, `readwhilemerging` for `db_bench_rwm`). |
+| `db_bench_merge_operator` | Value passed to `--merge_operator`, needed for `readwhilemerging`'s `Merge()` calls to do anything. Defaults to `put` for `db_bench_rwm`, unset otherwise. |
 | `db_bench_threads` | Client thread count. Default is `32`. |
 | `db_bench_cache_size` | Block cache in bytes. Default is `1048576`, small enough that reads miss the block cache. |
 | `db_bench_report_interval` | Seconds between interval rows in the report CSV. Default is `1`. |

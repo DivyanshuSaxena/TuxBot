@@ -34,7 +34,12 @@ class DbBenchBenchmark(BenchmarkInterface):
         self.benchmark_info: BenchmarkInfo = BenchmarkType.from_string(config.benchmark).value
         self.binary = getattr(config, 'db_bench_binary', '~/rocksdb/db_bench')
         self.db_path = os.path.expanduser(getattr(config, 'db_bench_db', '/mydata/rocksdb'))
-        self.benchmarks = getattr(config, 'db_bench_benchmarks', 'readwhilewriting')
+        # db_bench_rwm defaults to readwhilemerging with a merge operator.
+        rwm = self.benchmark_info.name == 'db_bench_rwm'
+        self.benchmarks = (getattr(config, 'db_bench_benchmarks', None)
+                            or ('readwhilemerging' if rwm else 'readwhilewriting'))
+        self.merge_operator = (getattr(config, 'db_bench_merge_operator', None)
+                                or ('put' if rwm else None))
         self.threads = getattr(config, 'db_bench_threads', 32)
         self.cache_size = getattr(config, 'db_bench_cache_size', 1048576)
         self.report_interval = getattr(config, 'db_bench_report_interval', 1)
@@ -72,7 +77,7 @@ class DbBenchBenchmark(BenchmarkInterface):
         return found
 
     def _build_command(self, duration: int) -> List[str]:
-        return [
+        cmd = [
             self._resolve_binary(),
             f"--benchmarks={self.benchmarks}",
             f"--db={self.db_path}",
@@ -85,6 +90,9 @@ class DbBenchBenchmark(BenchmarkInterface):
             f"--report_interval_seconds={self.report_interval}",
             f"--report_file={self.report_file}",
         ]
+        if self.merge_operator:
+            cmd.append(f"--merge_operator={self.merge_operator}")
+        return cmd
 
     def _run_seconds(self) -> int:
         """How long the continuous process must live to outlast every window.

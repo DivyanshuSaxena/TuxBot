@@ -28,7 +28,8 @@ class SimpleConfig:
     # RocksDB db_bench
     db_bench_binary: str = "~/rocksdb/db_bench"
     db_bench_db: str = "/mydata/rocksdb"
-    db_bench_benchmarks: str = "readwhilewriting"
+    db_bench_benchmarks: Optional[str] = None
+    db_bench_merge_operator: Optional[str] = None
     db_bench_threads: int = 32
     db_bench_cache_size: int = 1048576
     db_bench_report_interval: int = 1
@@ -344,7 +345,7 @@ class SimpleConfig:
                 f"llm_prompt_extra_instructions_file not found: {self.llm_prompt_extra_instructions_file}"
             )
 
-        if self.benchmark == "db_bench":
+        if self.benchmark in ("db_bench", "db_bench_rwm"):
             if self.db_bench_threads <= 0:
                 raise ValueError("db_bench_threads must be positive")
             if self.db_bench_report_interval <= 0:
