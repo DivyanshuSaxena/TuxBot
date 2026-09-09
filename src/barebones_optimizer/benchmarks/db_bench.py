@@ -34,12 +34,14 @@ class DbBenchBenchmark(BenchmarkInterface):
         self.benchmark_info: BenchmarkInfo = BenchmarkType.from_string(config.benchmark).value
         self.binary = getattr(config, 'db_bench_binary', '~/rocksdb/db_bench')
         self.db_path = os.path.expanduser(getattr(config, 'db_bench_db', '/mydata/rocksdb'))
-        # db_bench_rwm defaults to readwhilemerging with a merge operator.
+        # db_bench_rwm defaults to readwhilemerging.
         rwm = self.benchmark_info.name == 'db_bench_rwm'
         self.benchmarks = (getattr(config, 'db_bench_benchmarks', None)
                             or ('readwhilemerging' if rwm else 'readwhilewriting'))
-        self.merge_operator = (getattr(config, 'db_bench_merge_operator', None)
-                                or ('put' if rwm else None))
+        # The merge operator follows the database, not the benchmark: both
+        # variants share one fixture, and opening a DB that holds merge operands
+        # without it fails the first compaction. Never invoked on a merge-free DB.
+        self.merge_operator = getattr(config, 'db_bench_merge_operator', None) or 'put'
         self.threads = getattr(config, 'db_bench_threads', 32)
         self.cache_size = getattr(config, 'db_bench_cache_size', 1048576)
         self.report_interval = getattr(config, 'db_bench_report_interval', 1)
