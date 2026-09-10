@@ -100,7 +100,7 @@ These fields apply only when `benchmark` is `tpcc`.
 | `optimization_metric` | Metric read from `BenchmarkMetrics`, for example direct metrics like `throughput` or `latency_p99`, or a proxy metric when that is the chosen objective. |
 | `optimization_goal` | `maximize` or `minimize`. |
 | `max_iterations` | Number of tuning windows. |
-| `post_tuning_windows` | Extra windows after tuning using the final parameter set. |
+| `post_tuning_windows` | Extra windows after tuning, run at the best-scoring parameter set. |
 | `window_duration` | Measurement window duration in seconds. |
 | `settle_seconds` | Wait after a parameter change before the next window measures it. Default is `0`. Raise it for knobs whose effect lags, such as the NUMA scan-rate tunables. |
 | `continuous_apply` | Re-apply parameters during a window for in-window modes. |

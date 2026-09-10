@@ -64,12 +64,20 @@ class SimpleDualLoopOptimizer(SimpleOptimizer):
 
     def _run_dual_loop(self) -> Dict[str, Any]:
         total_iterations = self._total_iterations()
+        post_phase_start = self.config.max_iterations + 1
         latest_metrics: Optional[BenchmarkMetrics] = None
 
         for iteration in range(1, total_iterations + 1):
             self.iteration = iteration
             tuning_active = iteration <= self.config.max_iterations
             logger.info("=== ITERATION %s/%s ===", iteration, total_iterations)
+
+            if iteration == post_phase_start and self.config.post_tuning_windows > 0:
+                logger.info(
+                    "Entering post-tuning measurement phase: %s windows with frozen parameters",
+                    self.config.post_tuning_windows,
+                )
+                self._freeze_best_parameters()
 
             tuner_timing = None
             if self.config.tuning_mode == "in-window" and tuning_active and latest_metrics is not None:

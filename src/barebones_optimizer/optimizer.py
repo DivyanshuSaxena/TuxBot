@@ -212,6 +212,7 @@ class SimpleOptimizer:
                     f"{self.config.post_tuning_windows} windows with frozen parameters"
                 )
                 self._clear_pending_tuner_response()
+                self._freeze_best_parameters()
             
             # Check if there's a pending tuner response from previous iteration
             # and apply it if still valid (hasn't moved on to next iteration)
@@ -418,6 +419,7 @@ class SimpleOptimizer:
                         f"{self.config.post_tuning_windows} windows with frozen parameters"
                     )
                     self._clear_pending_tuner_response()
+                    self._freeze_best_parameters()
                 
                 # Execute window (synchronously, no tuner checks during execution)
                 if self.benchmark and hasattr(self.benchmark, 'update_workload'):
@@ -1054,6 +1056,67 @@ class SimpleOptimizer:
         that is when the fallback needs it.
         """
         self._write_run_file("tuxbot_best.json", json.dumps(self.best_parameters))
+
+    def _freeze_best_parameters(self) -> bool:
+        """Apply the best-scoring configuration for the post-tuning windows.
+
+        The post-tuning phase measures what the search found, so it runs the
+        best configuration rather than whichever candidate the tuner happened
+        to propose last.
+
+        Returns:
+            True if the knobs hold the best configuration, False if there was
+            none to fall back on or the write failed.
+        """
+        if not self.best_parameters:
+            logger.warning(
+                "No best parameters recorded; post-tuning windows keep the "
+                "parameters currently in effect"
+            )
+            return False
+
+        best = self._get_tunable_parameters(self.best_parameters)
+        if not best:
+            logger.warning(
+                "Best parameters hold no tunable knob; post-tuning windows keep "
+                "the parameters currently in effect"
+            )
+            return False
+
+        if all(self.current_parameters.get(name) == value for name, value in best.items()):
+            logger.info(
+                "Post-tuning phase already running the best parameters: "
+                f"{json.dumps(best, default=_json_default)}"
+            )
+            return True
+
+        from .parameter_manager import is_per_core_parameter
+        to_apply = {}
+        for name, value in best.items():
+            if is_per_core_parameter(name) and self.config.pin_to_cores:
+                to_apply[name] = {"value": value, "cores": self.config.pin_to_cores}
+            else:
+                to_apply[name] = value
+
+        with self.parameters_lock:
+            self._snapshot_original_parameters(to_apply.keys())
+            if not self.param_manager.set_parameters(to_apply):
+                logger.error(
+                    "Failed to apply best parameters for the post-tuning phase; "
+                    "the windows measure the parameters currently in effect"
+                )
+                return False
+
+            for name, value in best.items():
+                self.current_parameters[name] = value
+
+            logger.info(
+                f"Applied best parameters (reward {self.best_reward:.4f}) for the "
+                f"post-tuning phase: {json.dumps(best, default=_json_default)}"
+            )
+            self._settle("best parameters for the post-tuning phase")
+
+        return True
 
     def _apply_tuner_parameters(self, tuner_response: 'TunerResponse', iteration: int, duration_s: float = 0.0) -> Optional[Dict[str, Any]]:
         """Apply tuner parameters and return timing information.
