@@ -7,6 +7,9 @@ import pytest
 from barebones_optimizer.benchmarks.benchbase import BenchBaseBenchmark
 from barebones_optimizer.benchmarks.db_bench import DbBenchBenchmark
 from barebones_optimizer.benchmarks.gapbs import GapbsBenchmark
+from barebones_optimizer.benchmarks.memcached import (
+    IntervalLine, MemcachedBenchmark, histogram_percentile, window_stats,
+)
 from barebones_optimizer.benchmarks.sysbench import SysbenchBenchmark
 from barebones_optimizer.config import SimpleConfig
 
@@ -364,3 +367,66 @@ def test_gapbs_window_with_no_completed_trial_is_zero_not_an_error(tmp_path):
     # A trial can outlast a window; the system metrics still describe it.
     assert metrics.throughput == 0.0
     assert metrics.extra_metrics["trials"] == 0
+
+
+def _memcached(tmp_path, **overrides):
+    fields = dict(benchmark="memcached", results_dir=str(tmp_path), mutilate_qps=1000)
+    fields.update(overrides)
+    return MemcachedBenchmark(SimpleConfig(**fields))
+
+
+def _line(ts, thread, gets, bins):
+    tokens = " ".join(f"g{i}:{n}" for i, n in bins.items())
+    return IntervalLine.parse(f"MUTILATE_INTERVAL {ts} {thread} {gets} 0 0 {tokens}")
+
+
+def test_mutilate_interval_line_parses_get_and_set_bins():
+    line = IntervalLine.parse("MUTILATE_INTERVAL 12.5 3 100 7 2 g40:90 g41:10 s40:7")
+    assert (line.ts, line.thread, line.gets, line.sets, line.misses) == (12.5, 3, 100, 7, 2)
+    assert line.bins == {40: 97, 41: 10}
+    assert IntervalLine.parse("Total QPS = 1.0") is None
+
+
+def test_histogram_percentile_matches_mutilate_get_nth():
+    # 100 samples in bin 10: the 50th sits halfway through [1.1^10, 1.1^11).
+    lo, hi = 1.1 ** 10, 1.1 ** 11
+    assert histogram_percentile({10: 100}, 50) == pytest.approx(lo + 0.5 * (hi - lo))
+
+
+def test_window_stats_differences_each_thread_and_merges_bins():
+    start = {0: _line(10.0, 0, 100, {20: 100}), 1: _line(10.0, 1, 50, {20: 50})}
+    end = {
+        0: _line(20.0, 0, 1100, {20: 1090, 60: 10}),
+        1: _line(20.0, 1, 1050, {20: 1050}),
+        2: _line(20.0, 2, 999, {90: 999}),
+    }
+    stats = window_stats(start, end)
+    assert stats["threads"] == 2
+    assert stats["requests"] == 2000
+    assert stats["achieved_qps"] == pytest.approx(200.0)
+    assert 1.1 ** 60 <= stats["latency_p999"] < 1.1 ** 61
+    assert stats["latency_p50"] < 1.1 ** 21
+
+
+def test_memcached_parse_results_rescores_a_saved_window(tmp_path):
+    benchmark = _memcached(tmp_path)
+    window = tmp_path / "window_1"
+    window.mkdir()
+    (window / "mutilate_intervals.txt").write_text(
+        "MUTILATE_INTERVAL 10.0 0 100 0 0 g20:100\n"
+        "MUTILATE_INTERVAL 11.0 0 600 0 0 g20:600\n"
+    )
+    metrics = benchmark.parse_results(str(window))
+    assert metrics.throughput == pytest.approx(500.0)
+    assert metrics.extra_metrics["qps_ratio"] == pytest.approx(0.5)
+
+
+def test_memcached_remote_command_expands_on_the_client(tmp_path):
+    cmd = _memcached(tmp_path, mutilate_update=0.1)._remote_command(["--loadonly"])
+    assert cmd.startswith("~/mutilate/mutilate -s 10.10.1.1:11211 ")
+    assert "-T $(nproc)" in cmd and "-u 0.1" in cmd and cmd.endswith("--loadonly")
+
+
+def test_memcached_refuses_pin_to_cores():
+    with pytest.raises(ValueError, match="pin_to_cores"):
+        SimpleConfig(benchmark="memcached", pin_to_cores="0-3").validate()

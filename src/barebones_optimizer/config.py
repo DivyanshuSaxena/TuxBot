@@ -44,6 +44,25 @@ class SimpleConfig:
     gapbs_tolerance: Optional[float] = None
     gapbs_graph_file: str = ""
 
+    # Memcached + mutilate
+    memcached_binary: str = "memcached"
+    memcached_cpus: Optional[str] = None
+    memcached_threads: int = 4
+    memcached_memory_mb: int = 8192
+    memcached_port: int = 11211
+    mutilate_client_host: str = "node1"
+    mutilate_binary: str = "~/mutilate/mutilate"
+    mutilate_server_ip: str = "10.10.1.1"
+    mutilate_qps: int = 0
+    mutilate_threads: Optional[int] = None
+    mutilate_connections: int = 8
+    mutilate_depth: int = 1
+    mutilate_keysize: str = "fb_key"
+    mutilate_valuesize: str = "fb_value"
+    mutilate_iadist: str = "fb_ia"
+    mutilate_update: float = 0.0
+    mutilate_records: int = 1000000
+
     # BenchBase TPCC
     benchbase_jar_path: str = "deps/benchbase/target/benchbase-postgres/benchbase.jar"
     benchbase_config_file: str = "config/benchbase/postgres/tpcc.xml"
@@ -367,6 +386,21 @@ class SimpleConfig:
                 )
             if self.gapbs_tolerance is not None and self.gapbs_tolerance < 0:
                 raise ValueError("gapbs_tolerance must be non-negative")
+
+        if self.benchmark == "memcached":
+            if self.memcached_threads <= 0:
+                raise ValueError("memcached_threads must be positive")
+            if self.mutilate_qps < 0:
+                raise ValueError("mutilate_qps must be non-negative (0 is mutilate's peak)")
+            if self.mutilate_connections <= 0 or self.mutilate_depth <= 0:
+                raise ValueError("mutilate_connections and mutilate_depth must be positive")
+            if not 0.0 <= self.mutilate_update <= 1.0:
+                raise ValueError("mutilate_update is a SET:GET ratio in [0, 1]")
+            if self.pin_to_cores:
+                raise ValueError(
+                    "memcached pins itself with memcached_cpus; pin_to_cores would "
+                    "also rebind NIC IRQs whenever busy_poll or busy_read is set"
+                )
 
         if self.benchmark == "tpcc":
             if not self.benchbase_jar_path:

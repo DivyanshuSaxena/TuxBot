@@ -77,6 +77,43 @@ a trial does, so both happen once before the first window.
 | `gapbs_graph_file` | Serialized graph to load (`-f`) instead of generating one. `Builder` takes the file over `gapbs_scale`, so the two are exclusive. Byte-identical between runs and skips generation; a missing file fails at startup rather than mid-run. |
 | `gapbs_tolerance` | PageRank early-exit tolerance (`-t`). Read only by `pr` and `pr_spmv`; ignored with a warning elsewhere, since no other kernel accepts the option. `0` never satisfies the test, so a trial runs exactly `gapbs_iterations` passes rather than stopping on a float reduction whose value depends on scheduling order. |
 
+## Memcached Fields
+
+These fields apply only when `benchmark` is `memcached`.
+
+memcached runs on the tuned node for the whole session and one mutilate on a
+second machine offers a fixed load across every window; neither is restarted
+between windows. mutilate is started over ssh as the invoking user (the client
+trusts that user's key, not root's) and must be built with the
+`--report_interval` patch, which prints each client thread's cumulative counts
+and latency histogram once a second. A window is the difference between each
+thread's last report before it opened and its last before it closed. Latencies
+are in microseconds: `latency_avg` and `latency_p95`, plus `latency_p50`,
+`latency_p99` and `latency_p999` in the extra metrics, alongside `offered_qps`,
+`qps_ratio` (achieved over offered), `miss_ratio` and `memcached_cpu_cores`.
+`pin_to_cores` is refused: memcached pins itself with `memcached_cpus`, and
+`pin_to_cores` would make `busy_poll`/`busy_read` rebind NIC IRQs.
+
+| Field | Meaning |
+| --- | --- |
+| `memcached_binary` | memcached executable. Default is `memcached`. |
+| `memcached_cpus` | CPU list memcached is started under with `taskset`. Default is unpinned. |
+| `memcached_threads` | memcached worker threads (`-t`). Default is `4`. |
+| `memcached_memory_mb` | Cache size in MB (`-m`). Default is `8192`. |
+| `memcached_port` | TCP port. Default is `11211`. A port already listening fails startup. |
+| `mutilate_client_host` | ssh target of the load generator. Default is `node1`. |
+| `mutilate_binary` | Patched mutilate on the client. Default is `~/mutilate/mutilate`. |
+| `mutilate_server_ip` | Address the client reaches memcached on. Default is `10.10.1.1`. |
+| `mutilate_qps` | Offered load (`-q`). `0` asks for mutilate's peak. Pick it from a load sweep, not a constant. |
+| `mutilate_threads` | Client threads (`-T`). Default is the client's `nproc`. |
+| `mutilate_connections` | Connections per client thread (`-c`). Default is `8`. |
+| `mutilate_depth` | Pipeline depth (`-d`). Default is `1`. |
+| `mutilate_keysize` | Key size distribution (`-K`). Default is `fb_key`. |
+| `mutilate_valuesize` | Value size distribution (`-V`). Default is `fb_value`. |
+| `mutilate_iadist` | Inter-arrival distribution (`-i`). Default is `fb_ia`. |
+| `mutilate_update` | SET:GET ratio (`-u`). Default is `0.0`, GET-only. |
+| `mutilate_records` | Key space, preloaded once before the first window (`-r`). Default is `1000000`. |
+
 ## TPCC / BenchBase Fields
 
 These fields apply only when `benchmark` is `tpcc`.

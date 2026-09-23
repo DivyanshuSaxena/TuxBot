@@ -72,6 +72,15 @@ class BenchmarkType(Enum):
         description="GAP Benchmark Suite PageRank over a generated graph",
     )
 
+    MEMCACHED = BenchmarkInfo(
+        name="memcached",
+        script="",
+        requires_setup=False,
+        requires_cleanup=False,
+        base_command=["memcached"],
+        description="Memcached under a fixed mutilate load from a remote client",
+    )
+
     TPCC = BenchmarkInfo(
         name="tpcc",
         script="",
