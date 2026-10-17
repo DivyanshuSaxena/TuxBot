@@ -88,6 +88,19 @@ def test_the_window_read_is_independent_of_the_backlog(bench):
     assert b._guardrail_window_delta()["guardrail_fires"] == 1
 
 
+def test_a_repair_step_acted_but_its_other_lines_did_not(bench):
+    """A Repair moves a knob only on its `:=` lines; a metric reading, a
+    settle or a hold is the guardrail talking, not acting."""
+    b, log = bench
+    b._guardrail_window_start = b._read_guardrail_logs()
+    with open(log, "a") as f:
+        f.write("[REPAIR] busy_poll: rx_notify_violations=0.2 at 50; probing its neighbours\n")
+        f.write("[REPAIR] busy_poll := 25 (was 50, rx_notify_violations=0.2 at 50)\n")
+        f.write("[REPAIR] busy_poll: settled at 25, holding (12s left)\n")
+    assert b._guardrail_window_delta() == {"guardrail_fires": 1,
+                                           "guardrail_acted": True}
+
+
 def test_no_guardrail_configured_reports_nothing(tmp_path, monkeypatch):
     """The unguarded arm, not an error."""
     monkeypatch.delenv("GDL_GUARDRAIL_LOGS", raising=False)

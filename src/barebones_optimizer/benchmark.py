@@ -677,10 +677,18 @@ sleep 1 &&
 
     # The OS guardrails' own daemon logs, one per spec, named by
     # GDL_GUARDRAIL_LOGS. Each writes a `[SET] tuxbot_knobs := ...` line when it
-    # restores the knobs, flushed per line, so a byte offset at window open and
-    # a seek to it at close is the whole interface -- neither process knows the
-    # other's pid.
+    # restores the knobs, or a `[REPAIR] <knob> := <value>` line when a Repair
+    # steps one, flushed per line, so a byte offset at window open and a seek to
+    # it at close is the whole interface -- neither process knows the other's
+    # pid.
     _GUARDRAIL_ACTION = "[SET] tuxbot_knobs"
+    _GUARDRAIL_REPAIR = ("[REPAIR] ", " := ")
+
+    @classmethod
+    def _is_guardrail_action(cls, line: bytes) -> bool:
+        if cls._GUARDRAIL_ACTION.encode() in line:
+            return True
+        return all(m.encode() in line for m in cls._GUARDRAIL_REPAIR)
 
     def _guardrail_logs(self) -> List[str]:
         return [p for p in os.environ.get("GDL_GUARDRAIL_LOGS", "").split(",") if p]
@@ -706,7 +714,6 @@ sleep 1 &&
         start = getattr(self, "_guardrail_window_start", None)
         if not start:
             return {}
-        marker = self._GUARDRAIL_ACTION.encode()
         fires = 0
         for path, offset in start.items():
             try:
@@ -716,7 +723,7 @@ sleep 1 &&
                     if os.fstat(f.fileno()).st_size < offset:
                         offset = 0
                     f.seek(offset)
-                    fires += sum(1 for line in f if marker in line)
+                    fires += sum(1 for line in f if self._is_guardrail_action(line))
             except OSError:
                 continue
         return {"guardrail_fires": fires, "guardrail_acted": fires > 0}
