@@ -124,6 +124,9 @@ class SimpleConfig:
     llm_api_log_enabled: bool = True
     llm_api_log_dir: Optional[str] = None
     workload_description: Optional[str] = None
+    # What the attached guardrail watches and does, for the LLM prompt's
+    # GUARDRAILS section; None keeps the NUMA monitor's description.
+    guardrail_description: Optional[str] = None
     llm_additional_metrics: Optional[List[str]] = None
     llm_actor_additional_metrics: Optional[List[str]] = None
     llm_speculator_additional_metrics: Optional[List[str]] = None

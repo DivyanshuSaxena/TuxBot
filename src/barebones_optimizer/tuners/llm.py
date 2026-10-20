@@ -651,8 +651,10 @@ OPTIMIZATION STRATEGY:
         # attached gets no section and an unchanged prompt.
         guardrails_section = ""
         if os.environ.get("GDL_GUARDRAIL_LOGS"):
-            guardrails_section = (
-                "\nGUARDRAILS:\n"
+            # The config names its own guardrail; without one, the NUMA
+            # monitor's description, which the numa runs were made with.
+            description = getattr(self.config, "guardrail_description", None)
+            what = (f"- {description.strip()}\n" if description else
                 "- A separate safety monitor watches NUMA placement quality, "
                 "independently of your tuning. It checks two things every tick: "
                 "(1) whether tasks are sitting queued for a busy local CPU while "
@@ -663,7 +665,10 @@ OPTIMIZATION STRATEGY:
                 "Either one is a sign the current NUMA scan-rate / migration-cost "
                 "settings are fighting the workload's placement.\n"
                 "- If it detects a problem it restores a known-good configuration "
-                "on the spot, overriding whatever parameters were in effect at the time.\n"
+                "on the spot, overriding whatever parameters were in effect at the time.\n")
+            guardrails_section = (
+                "\nGUARDRAILS:\n"
+                + what +
                 '- A "[GUARDRAIL FIRED ...]" tag on a trial means that trial\'s '
                 "reward reflects a mix of your chosen parameters and this override, "
                 "not your configuration alone -- treat it as a less reliable "
