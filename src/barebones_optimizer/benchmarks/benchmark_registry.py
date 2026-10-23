@@ -81,6 +81,15 @@ class BenchmarkType(Enum):
         description="Memcached under a fixed mutilate load from a remote client",
     )
 
+    YCSB_REDIS = BenchmarkInfo(
+        name="ycsb_redis",
+        script="",
+        requires_setup=False,
+        requires_cleanup=False,
+        base_command=["redis-server"],
+        description="Redis under a fixed YCSB target load from a remote client",
+    )
+
     TPCC = BenchmarkInfo(
         name="tpcc",
         script="",

@@ -67,6 +67,22 @@ class SimpleConfig:
     mutilate_qps_after: Optional[int] = None
     load_switch_window: Optional[int] = None
 
+    # Redis + YCSB
+    redis_binary: str = "redis-server"
+    redis_cpus: Optional[str] = None
+    redis_io_threads: int = 8
+    redis_port: int = 6379
+    ycsb_client_host: str = "node1"
+    ycsb_home: str = "~/YCSB"
+    ycsb_server_ip: str = "10.10.1.1"
+    ycsb_workload: str = "~/workloads/ycsb/workloada"
+    ycsb_target: int = 0
+    ycsb_threads: int = 64
+    ycsb_load_threads: int = 16
+    ycsb_records: int = 1000000
+    ycsb_properties: Optional[Dict[str, Any]] = None
+    ycsb_hdr_dir: str = "/tmp/ycsb_hdr"
+
     # BenchBase TPCC
     benchbase_jar_path: str = "deps/benchbase/target/benchbase-postgres/benchbase.jar"
     benchbase_config_file: str = "config/benchbase/postgres/tpcc.xml"
@@ -433,6 +449,21 @@ class SimpleConfig:
             if self.pin_to_cores:
                 raise ValueError(
                     "memcached pins itself with memcached_cpus; pin_to_cores would "
+                    "also rebind NIC IRQs whenever busy_poll or busy_read is set"
+                )
+
+        if self.benchmark == "ycsb_redis":
+            if self.redis_io_threads <= 0:
+                raise ValueError("redis_io_threads must be positive (1 is single-threaded)")
+            if self.ycsb_target < 0:
+                raise ValueError("ycsb_target must be non-negative (0 is unthrottled)")
+            if self.ycsb_threads <= 0 or self.ycsb_load_threads <= 0:
+                raise ValueError("ycsb_threads and ycsb_load_threads must be positive")
+            if self.ycsb_records <= 0:
+                raise ValueError("ycsb_records must be positive")
+            if self.pin_to_cores:
+                raise ValueError(
+                    "redis pins itself with redis_cpus; pin_to_cores would "
                     "also rebind NIC IRQs whenever busy_poll or busy_read is set"
                 )
 

@@ -13,6 +13,7 @@ from barebones_optimizer.benchmarks.benchmark_registry import BenchmarkType
 from barebones_optimizer.benchmarks.db_bench import DbBenchBenchmark
 from barebones_optimizer.benchmarks.gapbs import GapbsBenchmark
 from barebones_optimizer.benchmarks.memcached import MemcachedBenchmark
+from barebones_optimizer.benchmarks.ycsb_redis import YcsbRedisBenchmark
 from barebones_optimizer.benchmarks.sysbench import SysbenchBenchmark
 from barebones_optimizer.config import SimpleConfig
 from barebones_optimizer.doctor import run_doctor
@@ -75,6 +76,8 @@ def create_benchmark(config: SimpleConfig):
         return GapbsBenchmark(config)
     if benchmark_name == "memcached":
         return MemcachedBenchmark(config)
+    if benchmark_name == "ycsb_redis":
+        return YcsbRedisBenchmark(config)
     if benchmark_name == "tpcc":
         return BenchBaseBenchmark(config)
     raise ValueError(f"Unsupported benchmark: {config.benchmark}")

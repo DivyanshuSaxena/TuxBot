@@ -116,6 +116,46 @@ are in microseconds: `latency_avg` and `latency_p95`, plus `latency_p50`,
 | `mutilate_qps_after` | Offered load from `load_switch_window` on: mutilate is restarted at that window's boundary with this `-q`. Default is `None` (one load). |
 | `load_switch_window` | First window measured at `mutilate_qps_after`. Set both or neither. |
 
+## Redis / YCSB Fields
+
+These fields apply only when `benchmark` is `ycsb_redis`.
+
+redis-server runs on the tuned node for the whole session, persistence off, and
+one YCSB client on a second machine offers a fixed target load across every
+window. Each run starts a fresh server and loads `ycsb_records` records into it
+before the first window; a load that inserts fewer fails startup. The client
+runs with `hdrhistogram.fileoutput`, so YCSB's status thread appends one
+interval histogram per operation per second to `<OP>.hdr` files under
+`ycsb_hdr_dir` on the client. Those files are read incrementally over ssh at
+each window boundary, and a window's latencies are the percentiles of the
+histograms that landed inside it, in microseconds: `latency_avg` and
+`latency_p95`, plus `latency_p50`, `latency_p99` and `latency_p999` in the
+extra metrics, alongside `offered_qps`, `qps_ratio` (achieved over
+`ycsb_target`), per-operation counts (`ops_read`, `ops_update`, ...) and
+`redis_cpu_cores`. `pin_to_cores` is refused for the same reason as memcached's.
+
+Redis only hands reads to its I/O threads while at least twice
+`redis_io_threads` clients have replies pending in one event-loop pass; below
+that the main thread does all the I/O. `ycsb_threads` is one connection each,
+so it has to be well above that threshold for the threads to engage.
+
+| Field | Meaning |
+| --- | --- |
+| `redis_binary` | redis-server executable. Default is `redis-server`. |
+| `redis_cpus` | CPU list redis-server is started under with `taskset`. Default is unpinned. |
+| `redis_io_threads` | `--io-threads`, the main thread included; reads are threaded too. `1` is single-threaded. Default is `8`. |
+| `redis_port` | TCP port. Default is `6379`. A port already listening, such as the packaged service's, fails startup. |
+| `ycsb_client_host` | ssh target of the load generator. Default is `node1`. |
+| `ycsb_home` | YCSB checkout on the client, with the redis binding built. Default is `~/YCSB`. |
+| `ycsb_server_ip` | Address the client reaches Redis on. Default is `10.10.1.1`. |
+| `ycsb_workload` | Workload file on the client (`-P`). Default is `~/workloads/ycsb/workloada`. |
+| `ycsb_target` | Offered load in ops/s (`-target`). `0` runs unthrottled. Pick it from a load sweep, not a constant. |
+| `ycsb_threads` | Client threads for the run, one connection each. Default is `64`. |
+| `ycsb_load_threads` | Client threads for the load phase. Default is `16`. |
+| `ycsb_records` | Key space (`recordcount`), loaded once per run. Default is `1000000`. |
+| `ycsb_properties` | Extra `-p key=value` properties for both phases, overriding the workload file. Default is none. |
+| `ycsb_hdr_dir` | Client directory for the interval histogram logs, emptied at each start. Default is `/tmp/ycsb_hdr`. |
+
 ## TPCC / BenchBase Fields
 
 These fields apply only when `benchmark` is `tpcc`.
