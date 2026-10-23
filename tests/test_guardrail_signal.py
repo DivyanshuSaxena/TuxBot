@@ -39,6 +39,11 @@ def bench(tmp_path, monkeypatch):
     return b, log
 
 
+def acted(delta):
+    """The two keys the best-parameters guard reads."""
+    return {k: delta[k] for k in ("guardrail_fires", "guardrail_acted")}
+
+
 def fire(log, n=1):
     with open(log, "a") as f:
         for _ in range(n):
@@ -52,13 +57,13 @@ def test_counts_only_the_lines_a_window_added(bench):
     b._guardrail_window_start = b._read_guardrail_logs()
     fire(log, 3)
     delta = b._guardrail_window_delta()
-    assert delta == {"guardrail_fires": 3, "guardrail_acted": True}
+    assert acted(delta) == {"guardrail_fires": 3, "guardrail_acted": True}
 
 
 def test_a_quiet_window_did_not_act(bench):
     b, log = bench
     b._guardrail_window_start = b._read_guardrail_logs()
-    assert b._guardrail_window_delta() == {"guardrail_fires": 0,
+    assert acted(b._guardrail_window_delta()) == {"guardrail_fires": 0,
                                            "guardrail_acted": False}
 
 
@@ -70,7 +75,7 @@ def test_a_rotated_log_is_read_whole(bench):
     b._guardrail_window_start = b._read_guardrail_logs()
     log.write_text("")                 # rotated
     fire(log, 2)
-    assert b._guardrail_window_delta() == {"guardrail_fires": 2,
+    assert acted(b._guardrail_window_delta()) == {"guardrail_fires": 2,
                                            "guardrail_acted": True}
 
 
@@ -97,8 +102,30 @@ def test_a_repair_step_acted_but_its_other_lines_did_not(bench):
         f.write("[REPAIR] busy_poll: rx_notify_violations=0.2 at 50; probing its neighbours\n")
         f.write("[REPAIR] busy_poll := 25 (was 50, rx_notify_violations=0.2 at 50)\n")
         f.write("[REPAIR] busy_poll: settled at 25, holding (12s left)\n")
-    assert b._guardrail_window_delta() == {"guardrail_fires": 1,
+    assert acted(b._guardrail_window_delta()) == {"guardrail_fires": 1,
                                            "guardrail_acted": True}
+
+
+def test_counts_repair_attempts_and_violated_ticks(bench):
+    """Every [REPAIR] line is an attempt, a `:=` or not, and only evaluated
+    in-scope ticks carry a verdict."""
+    b, log = bench
+    b._guardrail_window_start = b._read_guardrail_logs()
+    with open(log, "a") as f:
+        f.write('[obs] {"in_scope": false, "observations": {}}\n')
+        f.write('[obs] {"in_scope": true, "evaluated": false}\n')
+        f.write('[obs] {"in_scope": true, "holds": false}\n')
+        f.write('[obs] {"in_scope": true, "holds": false}\n')
+        f.write('[obs] {"in_scope": true, "holds": false}\n')
+        f.write('[obs] {"in_scope": true, "holds": true}\n')
+        f.write("[REPAIR] (busy_poll, base_slice_ns) := (0, 3000000) (was ...)\n")
+        f.write("[REPAIR] (busy_poll, base_slice_ns) settled at (0, 3000000): holding 30s\n")
+    delta = b._guardrail_window_delta()
+    assert delta["guardrail_fires"] == 1
+    assert delta["guardrail_repair_lines"] == 2
+    assert delta["guardrail_ticks"] == 4
+    assert delta["guardrail_violations"] == 3
+    assert delta["guardrail_violated_frac"] == 0.75
 
 
 def test_no_guardrail_configured_reports_nothing(tmp_path, monkeypatch):

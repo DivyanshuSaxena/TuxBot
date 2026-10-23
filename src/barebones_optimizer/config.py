@@ -62,6 +62,10 @@ class SimpleConfig:
     mutilate_iadist: str = "fb_ia"
     mutilate_update: float = 0.0
     mutilate_records: int = 1000000
+    # A load step: from window load_switch_window on, mutilate offers
+    # mutilate_qps_after instead of mutilate_qps. None keeps one load.
+    mutilate_qps_after: Optional[int] = None
+    load_switch_window: Optional[int] = None
 
     # BenchBase TPCC
     benchbase_jar_path: str = "deps/benchbase/target/benchbase-postgres/benchbase.jar"
@@ -86,6 +90,17 @@ class SimpleConfig:
     post_tuning_windows: int = 0
     window_duration: int = 10
     settle_seconds: int = 0
+    # Run length in windows, overriding max_iterations + post_tuning_windows,
+    # so a run can outlast a retune it may or may not start.
+    total_windows: Optional[int] = None
+    # A post-tuning window whose guardrail check failed at least
+    # retune_violation_rate times per second is a firing window;
+    # retune_after_windows of them in a row start a fresh tuning phase of
+    # retune_iterations (default max_iterations).
+    retune_on_guardrail: bool = False
+    retune_after_windows: int = 2
+    retune_violation_rate: float = 0.1
+    retune_iterations: Optional[int] = None
     continuous_apply: bool = False
     tuning_mode: str = "outside-of-window"
     results_dir: str = "results"
@@ -354,6 +369,20 @@ class SimpleConfig:
             raise ValueError("window_duration must be positive")
         if self.settle_seconds < 0:
             raise ValueError("settle_seconds must be non-negative")
+        if self.total_windows is not None:
+            if self.total_windows < self.max_iterations + self.post_tuning_windows:
+                raise ValueError("total_windows must cover max_iterations + post_tuning_windows")
+            if self.tuning_mode != "outside-of-window":
+                raise ValueError("total_windows needs tuning_mode 'outside-of-window'")
+        if self.retune_on_guardrail:
+            if self.tuning_mode != "outside-of-window":
+                raise ValueError("retune_on_guardrail needs tuning_mode 'outside-of-window'")
+            if self.retune_after_windows <= 0:
+                raise ValueError("retune_after_windows must be positive")
+            if self.retune_violation_rate <= 0.0:
+                raise ValueError("retune_violation_rate must be positive")
+            if self.retune_iterations is not None and self.retune_iterations <= 0:
+                raise ValueError("retune_iterations must be positive")
         if self.sysbench_report_interval <= 0:
             raise ValueError("sysbench_report_interval must be positive")
         if self.sysbench_continuous_duration <= 0:
@@ -399,6 +428,12 @@ class SimpleConfig:
                 raise ValueError("mutilate_connections and mutilate_depth must be positive")
             if not 0.0 <= self.mutilate_update <= 1.0:
                 raise ValueError("mutilate_update is a SET:GET ratio in [0, 1]")
+            if (self.mutilate_qps_after is None) != (self.load_switch_window is None):
+                raise ValueError("mutilate_qps_after and load_switch_window go together")
+            if self.load_switch_window is not None and self.load_switch_window < 2:
+                raise ValueError("load_switch_window must be 2 or later")
+            if self.mutilate_qps_after is not None and self.mutilate_qps_after < 0:
+                raise ValueError("mutilate_qps_after must be non-negative (0 is mutilate's peak)")
             if self.pin_to_cores:
                 raise ValueError(
                     "memcached pins itself with memcached_cpus; pin_to_cores would "

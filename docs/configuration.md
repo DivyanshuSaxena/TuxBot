@@ -113,6 +113,8 @@ are in microseconds: `latency_avg` and `latency_p95`, plus `latency_p50`,
 | `mutilate_iadist` | Inter-arrival distribution (`-i`). Default is `fb_ia`. |
 | `mutilate_update` | SET:GET ratio (`-u`). Default is `0.0`, GET-only. |
 | `mutilate_records` | Key space, preloaded once before the first window (`-r`). Default is `1000000`. |
+| `mutilate_qps_after` | Offered load from `load_switch_window` on: mutilate is restarted at that window's boundary with this `-q`. Default is `None` (one load). |
+| `load_switch_window` | First window measured at `mutilate_qps_after`. Set both or neither. |
 
 ## TPCC / BenchBase Fields
 
@@ -140,6 +142,11 @@ These fields apply only when `benchmark` is `tpcc`.
 | `post_tuning_windows` | Extra windows after tuning, run at the best-scoring parameter set. |
 | `window_duration` | Measurement window duration in seconds. |
 | `settle_seconds` | Wait after a parameter change before the next window measures it. Default is `0`. Raise it for knobs whose effect lags, such as the NUMA scan-rate tunables. |
+| `total_windows` | Run length in windows, overriding `max_iterations + post_tuning_windows`. Default is `None`. |
+| `retune_on_guardrail` | Start a fresh tuning phase when the guardrail keeps firing in post-tuning (outside-of-window mode only). Default is `false`. |
+| `retune_after_windows` | Consecutive firing post-tuning windows that start the retune. Default is `2`. |
+| `retune_violation_rate` | Failed guardrail checks per second of a window for it to count as firing. Default is `0.1`. |
+| `retune_iterations` | Length of the retune phase. Default is `max_iterations`. |
 | `continuous_apply` | Re-apply parameters during a window for in-window modes. |
 | `tuning_mode` | `outside-of-window` or `in-window`. Default is `outside-of-window`: tune after a measured window, then apply before the next measured window. |
 | `constraint_metric` | Optional metric that must satisfy a constraint. |
@@ -169,6 +176,7 @@ be committed or shared.
 | `llm_speculator_additional_metrics` | Speculator-specific extra metrics for dual-loop runs. |
 | `include_param_descriptions` | Include OS parameter descriptions in the prompt. Default is `true`. |
 | `workload_description` | Short workload context appended to the default prompt. |
+| `guardrail_description` | What the attached guardrail watches and does, for the prompt's GUARDRAILS section. Default `None` keeps the NUMA monitor's description. |
 | `llm_prompt_extra_instructions` | Extra prompt text appended after the default strategy. |
 | `llm_prompt_extra_instructions_file` | File containing extra prompt text, read relative to the run working directory. |
 | `llm_temperature` | Sampling temperature for LLM calls. |

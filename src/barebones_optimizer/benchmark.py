@@ -709,12 +709,15 @@ sleep 1 &&
 
         `guardrail_acted` is the flag the optimizer keys off: the knobs moved
         under it, so the window is not a clean measurement of the configuration
-        it applied.
+        it applied. `guardrail_repair_lines` counts every `[REPAIR]` line --
+        steps, probes, settles and holds -- and `guardrail_violated_frac` is
+        the share of evaluated ticks whose check failed; together they say
+        whether a Repair kept trying without the check coming back.
         """
         start = getattr(self, "_guardrail_window_start", None)
         if not start:
             return {}
-        fires = 0
+        fires = repairs = held = violated = 0
         for path, offset in start.items():
             try:
                 with open(path, "rb") as f:
@@ -723,10 +726,24 @@ sleep 1 &&
                     if os.fstat(f.fileno()).st_size < offset:
                         offset = 0
                     f.seek(offset)
-                    fires += sum(1 for line in f if self._is_guardrail_action(line))
+                    for line in f:
+                        if self._is_guardrail_action(line):
+                            fires += 1
+                        if line.startswith(b"[REPAIR] "):
+                            repairs += 1
+                        elif line.startswith(b"[obs] "):
+                            if b'"holds": false' in line:
+                                violated += 1
+                            elif b'"holds": true' in line:
+                                held += 1
             except OSError:
                 continue
-        return {"guardrail_fires": fires, "guardrail_acted": fires > 0}
+        ticks = held + violated
+        return {"guardrail_fires": fires, "guardrail_acted": fires > 0,
+                "guardrail_repair_lines": repairs,
+                "guardrail_ticks": ticks,
+                "guardrail_violations": violated,
+                "guardrail_violated_frac": violated / ticks if ticks else 0.0}
 
     def _read_rapl_socket_energy(self, socket: int = 0) -> Optional[int]:
         """Read RAPL energy for a specific socket (package).

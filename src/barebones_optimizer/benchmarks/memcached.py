@@ -147,6 +147,8 @@ class MemcachedBenchmark(BenchmarkInterface):
         self.iadist = get("mutilate_iadist", "fb_ia")
         self.update = get("mutilate_update", 0.0)
         self.records = get("mutilate_records", 1000000)
+        self.qps_after = get("mutilate_qps_after", None)
+        self.switch_window = get("load_switch_window", None)
 
         self.window_output_dir = os.path.join(
             self.results_dir, f"{self.benchmark_info.name}_windows"
@@ -196,7 +198,7 @@ class MemcachedBenchmark(BenchmarkInterface):
 
     def _run_seconds(self) -> int:
         """Long enough to outlast every window, as db_bench's continuous run is."""
-        windows = (
+        windows = getattr(self.config, "total_windows", None) or (
             getattr(self.config, "max_iterations", 1)
             + getattr(self.config, "post_tuning_windows", 0)
         )
@@ -251,16 +253,17 @@ class MemcachedBenchmark(BenchmarkInterface):
         logger.info("memcached pid %s on CPUs %s, port %s",
                     self.memcached_process.pid, self.cpus or "all", self.port)
 
-    def _start_mutilate(self) -> None:
+    def _start_mutilate(self, preload: bool = True) -> None:
         stale = self._ssh("pgrep -x mutilate").stdout.split()
         if stale:
             raise RuntimeError(
                 f"mutilate is already running on {self.client} (pids {stale}); "
                 f"its load would add to this run's. Kill it and re-run."
             )
-        preload = self._ssh(self._remote_command(["--loadonly"]), timeout=900)
-        if preload.returncode != 0:
-            raise RuntimeError(f"mutilate preload failed: {preload.stderr.strip()}")
+        if preload:
+            loaded = self._ssh(self._remote_command(["--loadonly"]), timeout=900)
+            if loaded.returncode != 0:
+                raise RuntimeError(f"mutilate preload failed: {loaded.stderr.strip()}")
 
         remote = self._remote_command([
             "--noload", "-q", str(self.qps), "-t", str(self._run_seconds()),
@@ -279,38 +282,79 @@ class MemcachedBenchmark(BenchmarkInterface):
         """Start both ends and wait until every client thread has reported twice."""
         self._start_memcached()
         self._start_mutilate()
+        self._await_reports("warm-up")
+        return True
 
+    def _await_reports(self, when: str) -> None:
+        """Wait until every client thread has reported twice."""
         deadline = time.time() + 120
         seen: Dict[int, int] = {}
         while time.time() < deadline:
-            self._check_alive("warm-up")
+            self._check_alive(when)
             for line in self._advance():
                 seen[line.thread] = seen.get(line.thread, 0) + 1
             if seen and min(seen.values()) >= 2 and max(seen.values()) >= 3:
                 logger.info("mutilate is reporting from %s threads", len(seen))
-                return True
+                return
             time.sleep(0.5)
-        raise RuntimeError(f"mutilate produced no interval reports within 120s. "
-                           f"See {self._mutilate_log}")
+        raise RuntimeError(f"mutilate produced no interval reports within 120s "
+                           f"of {when}. See {self._mutilate_log}")
+
+    def update_workload(self, iteration: int) -> None:
+        """Step the offered load at load_switch_window.
+
+        mutilate takes its rate once, at launch, so the step is a restart at
+        the window boundary. Its interval lines are cumulative per thread and
+        start again from zero, so the old run's last lines are dropped as a
+        baseline: a window diffing across the restart would read negative.
+        """
+        if self.switch_window is None or iteration != self.switch_window:
+            return
+        logger.info("Load step before window %s: %s -> %s QPS",
+                    iteration, self.qps or "peak", self.qps_after or "peak")
+        self._stop_mutilate()
+        self._advance()
+        self._latest = {}
+        self.qps = self.qps_after
+        self._start_mutilate(preload=False)
+        self._await_reports(f"the load step to {self.qps or 'peak'} QPS")
+        seconds = getattr(self.config, "settle_seconds", 0)
+        if seconds > 0:
+            logger.info("Settling %ss after the load step", seconds)
+            time.sleep(seconds)
 
     def get_target_pid(self):
         if self.memcached_process and self.memcached_process.poll() is None:
             return self.memcached_process.pid
         return None
 
-    def cleanup(self) -> None:
-        for proc in (self.mutilate_process, self.memcached_process):
-            if proc and proc.poll() is None:
-                self._signal_group(proc, signal.SIGTERM)
-                try:
-                    proc.wait(timeout=15)
-                except subprocess.TimeoutExpired:
-                    self._signal_group(proc, signal.SIGKILL)
-        if self.mutilate_process is not None:
+    @classmethod
+    def _stop_process(cls, proc) -> None:
+        if proc and proc.poll() is None:
+            cls._signal_group(proc, signal.SIGTERM)
             try:
-                self._ssh("pkill -x mutilate", timeout=30)
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                logger.warning("Could not stop mutilate on %s: %s", self.client, exc)
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                cls._signal_group(proc, signal.SIGKILL)
+
+    def _stop_mutilate(self) -> None:
+        """Stop the local ssh and the remote mutilate it ran."""
+        self._stop_process(self.mutilate_process)
+        if self.mutilate_process is None:
+            return
+        try:
+            self._ssh("pkill -x mutilate", timeout=30)
+            # pkill returns before the process is gone, and _start_mutilate
+            # refuses to start beside a live one.
+            deadline = time.time() + 15
+            while time.time() < deadline and self._ssh("pgrep -x mutilate").stdout.strip():
+                time.sleep(0.5)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.warning("Could not stop mutilate on %s: %s", self.client, exc)
+
+    def cleanup(self) -> None:
+        self._stop_mutilate()
+        self._stop_process(self.memcached_process)
         for handle in self._handles:
             handle.close()
         self._handles = []
