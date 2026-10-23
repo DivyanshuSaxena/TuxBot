@@ -27,8 +27,7 @@ class _Bench:
 
 
 def firing(violations=3):
-    """A window's guardrail delta; the test windows are 10s, so 3 failed
-    checks is 0.3/s against the default 0.1/s."""
+    """A window's guardrail delta."""
     return {"guardrail_fires": 1, "guardrail_acted": True,
             "guardrail_ticks": 5, "guardrail_violations": violations}
 
@@ -82,14 +81,14 @@ def test_two_firing_post_tuning_windows_start_a_fresh_phase(tmp_path, monkeypatc
     assert opt.best_reward == 107.0   # phase 2's best, not window 1's 101
 
 
-def test_the_rate_is_inclusive(tmp_path, monkeypatch):
+def test_one_failed_check_is_a_firing_window(tmp_path, monkeypatch):
     opt, _, created = run({5: firing(1), 6: firing(1)}, tmp_path, monkeypatch)
     assert len(created) == 1
 
 
-def test_below_the_rate_does_not_fire(tmp_path, monkeypatch):
+def test_a_quiet_window_does_not_fire(tmp_path, monkeypatch):
     opt, asked, created = run({5: firing(0), 6: firing(0), 7: firing(0)},
-                              tmp_path, monkeypatch, retune_violation_rate=0.05)
+                              tmp_path, monkeypatch)
     assert not created
     assert asked == [1, 2]
 
@@ -110,9 +109,16 @@ def test_one_retune_per_run(tmp_path, monkeypatch):
     assert len(created) == 1
 
 
-def test_too_late_for_a_measured_phase(tmp_path, monkeypatch):
-    # 12 + 3 tuning + 3 post-tuning windows would need 18 of 14.
-    opt, _, created = run({11: firing(), 12: firing()}, tmp_path, monkeypatch)
+def test_a_late_retune_searches_to_the_end(tmp_path, monkeypatch):
+    opt, asked, created = run({11: firing(), 12: firing()}, tmp_path, monkeypatch)
+    assert len(created) == 1
+    assert [p for i, p, post in phases(opt) if i > 12] == [2, 2]
+    # Asked after window 13 (the defaults), never after the run's last.
+    assert asked == [1, 2, 13]
+
+
+def test_the_last_window_cannot_retune(tmp_path, monkeypatch):
+    opt, _, created = run({13: firing(), 14: firing()}, tmp_path, monkeypatch)
     assert not created
 
 

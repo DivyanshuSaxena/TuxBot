@@ -173,15 +173,10 @@ class SimpleOptimizer:
         total = getattr(self.config, "total_windows", None)
         return total or self.config.max_iterations + self.config.post_tuning_windows
 
-    # Windows a retune must leave after its tuning phase, so the phase it
-    # found has a post-tuning measurement at all.
-    RETUNE_MIN_POST_WINDOWS = 3
-
-    def _guardrail_firing(self, metrics: BenchmarkMetrics) -> bool:
-        """The guardrail's check failed at least retune_violation_rate times per
-        second of this window."""
-        violations = metrics.extra_metrics.get("guardrail_violations", 0)
-        return violations / self.config.window_duration >= self.config.retune_violation_rate
+    @staticmethod
+    def _guardrail_firing(metrics: BenchmarkMetrics) -> bool:
+        """The guardrail's check failed at least once in this window."""
+        return metrics.extra_metrics.get("guardrail_violations", 0) > 0
 
     def _initial_parameters(self) -> Dict[str, Any]:
         """The defaults of every parameter this config can touch, plus its
@@ -484,7 +479,7 @@ class SimpleOptimizer:
                 if not metrics:
                     logger.warning(f"No metrics object from iteration {iteration}")
                     # Still need to get tuner response for next iteration
-                    if tuning_active and iteration < self._tuning_end:
+                    if tuning_active and iteration < min(self._tuning_end, total_iterations):
                         tuner_response, duration = self._get_tuner_response_sync(metrics, iteration)
                         if tuner_response:
                             self._apply_tuner_parameters(tuner_response, iteration, duration_s=duration)
@@ -495,7 +490,7 @@ class SimpleOptimizer:
                 if optimization_metric_value is None or (isinstance(optimization_metric_value, float) and (optimization_metric_value != optimization_metric_value)):  # NaN check
                     logger.warning(f"No valid {self.config.optimization_metric} metric from iteration {iteration} (value: {optimization_metric_value})")
                     # Still need to get tuner response for next iteration
-                    if tuning_active and iteration < self._tuning_end:
+                    if tuning_active and iteration < min(self._tuning_end, total_iterations):
                         tuner_response, duration = self._get_tuner_response_sync(metrics, iteration)
                         if tuner_response:
                             self._apply_tuner_parameters(tuner_response, iteration, duration_s=duration)
@@ -603,25 +598,19 @@ class SimpleOptimizer:
 
                 self.history.append(history_entry)
 
-                # One retune per run, from post-tuning only, and only while the
-                # phase it starts can still be measured afterwards.
-                if self.config.retune_on_guardrail and in_post_tuning_phase and not self._retuned:
+                # One retune per run, from post-tuning only. A late one runs
+                # its search to the end of the run.
+                if (self.config.retune_on_guardrail and in_post_tuning_phase
+                        and not self._retuned and iteration < total_iterations):
                     self._firing_streak = (
                         self._firing_streak + 1 if self._guardrail_firing(metrics) else 0)
                     if self._firing_streak >= self.config.retune_after_windows:
-                        length = self.config.retune_iterations or self.config.max_iterations
-                        if iteration + length + self.RETUNE_MIN_POST_WINDOWS <= total_iterations:
-                            history_entry["retune_triggered"] = True
-                            self._start_retune(iteration)
-                        else:
-                            logger.info(
-                                f"Guardrail retune due after window {iteration}, but "
-                                f"too late for a {length}-window phase; not started")
-                            self._retuned = True
+                        history_entry["retune_triggered"] = True
+                        self._start_retune(iteration)
 
                 # Get tuner response for next iteration (synchronously)
                 # Only do this if we have more iterations to go
-                if tuning_active and iteration < self._tuning_end:
+                if tuning_active and iteration < min(self._tuning_end, total_iterations):
                     tuner_response, duration = self._get_tuner_response_sync(metrics, iteration)
                     if tuner_response:
                         tuner_timing_info = self._apply_tuner_parameters(tuner_response, iteration, duration_s=duration)

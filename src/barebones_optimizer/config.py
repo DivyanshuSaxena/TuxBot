@@ -93,13 +93,11 @@ class SimpleConfig:
     # Run length in windows, overriding max_iterations + post_tuning_windows,
     # so a run can outlast a retune it may or may not start.
     total_windows: Optional[int] = None
-    # A post-tuning window whose guardrail check failed at least
-    # retune_violation_rate times per second is a firing window;
-    # retune_after_windows of them in a row start a fresh tuning phase of
-    # retune_iterations (default max_iterations).
+    # retune_after_windows consecutive post-tuning windows in which the
+    # guardrail's check failed start a fresh tuning phase of retune_iterations
+    # (default max_iterations).
     retune_on_guardrail: bool = False
     retune_after_windows: int = 2
-    retune_violation_rate: float = 0.1
     retune_iterations: Optional[int] = None
     continuous_apply: bool = False
     tuning_mode: str = "outside-of-window"
@@ -379,8 +377,6 @@ class SimpleConfig:
                 raise ValueError("retune_on_guardrail needs tuning_mode 'outside-of-window'")
             if self.retune_after_windows <= 0:
                 raise ValueError("retune_after_windows must be positive")
-            if self.retune_violation_rate <= 0.0:
-                raise ValueError("retune_violation_rate must be positive")
             if self.retune_iterations is not None and self.retune_iterations <= 0:
                 raise ValueError("retune_iterations must be positive")
         if self.sysbench_report_interval <= 0:

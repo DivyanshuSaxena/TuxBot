@@ -144,8 +144,7 @@ These fields apply only when `benchmark` is `tpcc`.
 | `settle_seconds` | Wait after a parameter change before the next window measures it. Default is `0`. Raise it for knobs whose effect lags, such as the NUMA scan-rate tunables. |
 | `total_windows` | Run length in windows, overriding `max_iterations + post_tuning_windows`. Default is `None`. |
 | `retune_on_guardrail` | Start a fresh tuning phase when the guardrail keeps firing in post-tuning (outside-of-window mode only). Default is `false`. |
-| `retune_after_windows` | Consecutive firing post-tuning windows that start the retune. Default is `2`. |
-| `retune_violation_rate` | Failed guardrail checks per second of a window for it to count as firing. Default is `0.1`. |
+| `retune_after_windows` | Consecutive post-tuning windows in which the guardrail's check failed at least once that start the retune. Default is `2`. |
 | `retune_iterations` | Length of the retune phase. Default is `max_iterations`. |
 | `continuous_apply` | Re-apply parameters during a window for in-window modes. |
 | `tuning_mode` | `outside-of-window` or `in-window`. Default is `outside-of-window`: tune after a measured window, then apply before the next measured window. |
