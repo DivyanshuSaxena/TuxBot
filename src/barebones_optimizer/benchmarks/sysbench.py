@@ -853,11 +853,14 @@ class SysbenchBenchmark(BenchmarkInterface):
                     summary_start_idx = i
                     break
         else:
-            # For OLTP and other benchmarks, look for SQL statistics or General statistics
-            for i in range(len(lines) - 1, -1, -1):
-                line = lines[i]
-                if "SQL statistics:" in line or ("General statistics:" in line and "SQL statistics:" not in log_content[:i]):
-                    summary_start_idx = i
+            # For OLTP and other benchmarks, the last SQL statistics section,
+            # else the last General statistics one. OLTP prints both, SQL first.
+            for marker in ("SQL statistics:", "General statistics:"):
+                for i in range(len(lines) - 1, -1, -1):
+                    if marker in lines[i]:
+                        summary_start_idx = i
+                        break
+                if summary_start_idx != -1:
                     break
         
         if summary_start_idx == -1:

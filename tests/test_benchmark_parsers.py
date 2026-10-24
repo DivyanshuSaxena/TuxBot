@@ -99,6 +99,47 @@ Latency (ms):
     assert metrics.extra_metrics["latency_p99"] == 5.50
 
 
+def test_sysbench_oltp_parser_reads_the_sql_statistics(tmp_path):
+    """sysbench 1.0.20's oltp_read_write summary: SQL statistics, then General."""
+    output_dir = tmp_path / "window"
+    output_dir.mkdir()
+    (output_dir / "sysbench.log").write_text(
+        """
+SQL statistics:
+    queries performed:
+        read:                            186494
+        write:                           53208
+        other:                           26668
+        total:                           266370
+    transactions:                        13296  (1658.72 per sec.)
+    queries:                             266370 (33230.50 per sec.)
+    ignored errors:                      25     (3.12 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+General statistics:
+    total time:                          8.0131s
+    total number of events:              13296
+
+Latency (ms):
+         min:                                    5.29
+         avg:                                    9.63
+         max:                                   67.40
+         99th percentile:                       31.37
+         sum:                               128044.94
+""",
+        encoding="utf-8",
+    )
+    config = SimpleConfig(benchmark="sysbench_oltp_rw", results_dir=str(tmp_path / "results"))
+    benchmark = SysbenchBenchmark(config)
+
+    metrics = benchmark.parse_results(str(output_dir))
+
+    assert metrics.goodput == 1658.72
+    assert metrics.throughput == 33230.50
+    assert metrics.extra_metrics["tx_total"] == 13296
+    assert metrics.extra_metrics["latency_p99"] == 31.37
+
+
 def test_sysbench_pre_execute_fails_clearly_when_missing_sysbench(monkeypatch, tmp_path):
     config = SimpleConfig(benchmark="sysbench_cpu", results_dir=str(tmp_path))
     benchmark = SysbenchBenchmark(config)

@@ -68,7 +68,7 @@ def setup_signal_handlers():
 
 def create_benchmark(config: SimpleConfig):
     benchmark_name = BenchmarkType.from_string(config.benchmark).value.name
-    if benchmark_name == "sysbench_cpu":
+    if benchmark_name in ("sysbench_cpu", "sysbench_oltp_rw"):
         return SysbenchBenchmark(config)
     if benchmark_name in ("db_bench", "db_bench_rwm"):
         return DbBenchBenchmark(config)

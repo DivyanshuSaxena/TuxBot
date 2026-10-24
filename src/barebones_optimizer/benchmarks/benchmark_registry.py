@@ -32,6 +32,15 @@ class BenchmarkType(Enum):
         default_options={"cpu_max_prime": 20000},
     )
 
+    SYSBENCH_OLTP_RW = BenchmarkInfo(
+        name="sysbench_oltp_rw",
+        script="oltp_read_write",
+        requires_setup=True,
+        requires_cleanup=True,
+        base_command=["sysbench"],
+        description="Sysbench OLTP read-write workload on PostgreSQL",
+    )
+
     DB_BENCH = BenchmarkInfo(
         name="db_bench",
         script="",
