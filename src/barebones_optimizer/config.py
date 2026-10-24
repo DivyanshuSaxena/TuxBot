@@ -24,6 +24,13 @@ class SimpleConfig:
     sysbench_interval_reporting: bool = True
     sysbench_report_interval: int = 1
     sysbench_continuous_duration: int = 3600
+    sysbench_host: str = "127.0.0.1"
+    sysbench_port: int = 5432
+    sysbench_user: str = "admin"
+    sysbench_password: str = ""
+    sysbench_db: str = "benchdb"
+    sysbench_tables: int = 4
+    sysbench_table_size: int = 100000
 
     # RocksDB db_bench
     db_bench_binary: str = "~/rocksdb/db_bench"

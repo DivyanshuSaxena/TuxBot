@@ -36,6 +36,18 @@ These fields apply only when `benchmark` is `sysbench_cpu`.
 | `sysbench_report_interval` | Seconds between live sysbench interval reports. Default is `1`. |
 | `sysbench_continuous_duration` | Maximum lifetime for the live sysbench process. Increase for long LLM runs. Default is `3600`. |
 
+These apply when `benchmark` is `sysbench_oltp_rw`, which runs `oltp_read_write` against PostgreSQL.
+
+| Field | Meaning |
+| --- | --- |
+| `sysbench_host` | PostgreSQL host. Default is `127.0.0.1`. |
+| `sysbench_port` | PostgreSQL port. Default is `5432`. |
+| `sysbench_user` | PostgreSQL role. Default is `admin`. |
+| `sysbench_password` | That role's password. Default is empty. |
+| `sysbench_db` | Database the tables are prepared in. Default is `benchdb`. |
+| `sysbench_tables` | Number of OLTP tables. Default is `4`. |
+| `sysbench_table_size` | Rows per table. Default is `100000`. |
+
 ## db_bench Fields
 
 These fields apply only when `benchmark` is `db_bench`.
