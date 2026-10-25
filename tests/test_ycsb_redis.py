@@ -158,3 +158,26 @@ def test_fetch_script_reads_appends_and_survives_a_truncated_file(tmp_path):
     # A new run's file, shorter than the recorded offset, is read from the top.
     (hdr / "READ.hdr").write_text(line(9))
     assert fetch() == [("READ", 9.0)]
+
+
+def test_load_step_fields_go_together():
+    with pytest.raises(ValueError, match="go together"):
+        SimpleConfig(benchmark="ycsb_redis", ycsb_target_after=5000).validate()
+    SimpleConfig(benchmark="ycsb_redis", ycsb_target=1000, ycsb_target_after=5000,
+                 load_switch_window=14).validate()
+
+
+def test_load_step_restarts_the_client_at_its_window(tmp_path, monkeypatch):
+    benchmark = _ycsb(tmp_path, ycsb_target_after=5000, load_switch_window=3)
+    calls = []
+    monkeypatch.setattr(benchmark, "_stop_ycsb", lambda: calls.append(("stop", benchmark.target)))
+    monkeypatch.setattr(benchmark, "_start_ycsb", lambda: calls.append(("start", benchmark.target)))
+    monkeypatch.setattr(benchmark, "_await_intervals", lambda when: calls.append(("await",)))
+    benchmark.update_workload(2)
+    assert calls == [] and benchmark.target == 1000
+    benchmark.update_workload(3)
+    assert calls == [("stop", 1000), ("start", 5000), ("await",)]
+    assert benchmark.metrics_from({"requests": 1, "achieved_qps": 2500.0, "op_counts": {},
+                                   "latency_avg": 0, "latency_p50": 0, "latency_p95": 0,
+                                   "latency_p99": 0, "latency_p999": 0}
+                                  ).extra_metrics["qps_ratio"] == pytest.approx(0.5)

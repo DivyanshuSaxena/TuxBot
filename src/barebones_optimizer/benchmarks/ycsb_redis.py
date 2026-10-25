@@ -210,6 +210,8 @@ class YcsbRedisBenchmark(BenchmarkInterface):
         self.server_ip = get("ycsb_server_ip", "10.10.1.1")
         self.workload = get("ycsb_workload", "~/workloads/ycsb/workloada")
         self.target = get("ycsb_target", 0)
+        self.target_after = get("ycsb_target_after", None)
+        self.switch_window = get("load_switch_window", None)
         self.threads = get("ycsb_threads", 64)
         self.load_threads = get("ycsb_load_threads", 16)
         self.records = get("ycsb_records", 1000000)
@@ -404,6 +406,27 @@ class YcsbRedisBenchmark(BenchmarkInterface):
             time.sleep(1.0)
         raise RuntimeError(f"YCSB wrote no interval histograms within 180s of {when}. "
                            f"See {self._ycsb_log}")
+
+    def update_workload(self, iteration: int) -> None:
+        """Step the target load at load_switch_window.
+
+        YCSB takes -target once, at launch, so the step is a restart of the
+        client at the window boundary against the same loaded server. The new
+        run starts its .hdr files afresh, so the old run's unread intervals,
+        which fell between windows, are dropped with them.
+        """
+        if self.switch_window is None or iteration != self.switch_window:
+            return
+        logger.info("Load step before window %s: %s -> %s ops/s",
+                    iteration, self.target or "peak", self.target_after or "peak")
+        self._stop_ycsb()
+        self.target = self.target_after
+        self._start_ycsb()
+        self._await_intervals(f"the load step to {self.target or 'peak'} ops/s")
+        seconds = getattr(self.config, "settle_seconds", 0)
+        if seconds > 0:
+            logger.info("Settling %ss after the load step", seconds)
+            time.sleep(seconds)
 
     def get_target_pid(self):
         if self.redis_process and self.redis_process.poll() is None:

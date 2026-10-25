@@ -162,6 +162,7 @@ so it has to be well above that threshold for the threads to engage.
 | `ycsb_server_ip` | Address the client reaches Redis on. Default is `10.10.1.1`. |
 | `ycsb_workload` | Workload file on the client (`-P`). Default is `~/workloads/ycsb/workloada`. |
 | `ycsb_target` | Offered load in ops/s (`-target`). `0` runs unthrottled. Pick it from a load sweep, not a constant. |
+| `ycsb_target_after` | Target from `load_switch_window` on: the YCSB client is restarted at that window's boundary with this `-target`, against the same loaded server. Default is `None` (one load); set it with `load_switch_window`. |
 | `ycsb_threads` | Client threads for the run, one connection each. Default is `64`. |
 | `ycsb_load_threads` | Client threads for the load phase. Default is `16`. |
 | `ycsb_records` | Key space (`recordcount`), loaded once per run. Default is `1000000`. |

@@ -70,7 +70,8 @@ class SimpleConfig:
     mutilate_update: float = 0.0
     mutilate_records: int = 1000000
     # A load step: from window load_switch_window on, mutilate offers
-    # mutilate_qps_after instead of mutilate_qps. None keeps one load.
+    # mutilate_qps_after instead of mutilate_qps (YCSB: ycsb_target_after for
+    # ycsb_target). None keeps one load.
     mutilate_qps_after: Optional[int] = None
     load_switch_window: Optional[int] = None
 
@@ -84,6 +85,7 @@ class SimpleConfig:
     ycsb_server_ip: str = "10.10.1.1"
     ycsb_workload: str = "~/workloads/ycsb/workloada"
     ycsb_target: int = 0
+    ycsb_target_after: Optional[int] = None
     ycsb_threads: int = 64
     ycsb_load_threads: int = 16
     ycsb_records: int = 1000000
@@ -464,6 +466,12 @@ class SimpleConfig:
                 raise ValueError("redis_io_threads must be positive (1 is single-threaded)")
             if self.ycsb_target < 0:
                 raise ValueError("ycsb_target must be non-negative (0 is unthrottled)")
+            if (self.ycsb_target_after is None) != (self.load_switch_window is None):
+                raise ValueError("ycsb_target_after and load_switch_window go together")
+            if self.load_switch_window is not None and self.load_switch_window < 2:
+                raise ValueError("load_switch_window must be 2 or later")
+            if self.ycsb_target_after is not None and self.ycsb_target_after < 0:
+                raise ValueError("ycsb_target_after must be non-negative (0 is unthrottled)")
             if self.ycsb_threads <= 0 or self.ycsb_load_threads <= 0:
                 raise ValueError("ycsb_threads and ycsb_load_threads must be positive")
             if self.ycsb_records <= 0:
