@@ -673,6 +673,12 @@ OPTIMIZATION STRATEGY:
                 "reward reflects a mix of your chosen parameters and this override, "
                 "not your configuration alone -- treat it as a less reliable "
                 "measurement, not necessarily a bad configuration.\n"
+                "- When the tag or the guardrail status says which way it moved "
+                "a knob (e.g. \"base_slice_ns 3ms -> 0.5ms (lower)\"), that is "
+                "its own measurement, not noise: your value for that knob failed "
+                "its check, and the direction it moved is the direction that "
+                "fixed it. Weigh that direction above a reward that the "
+                "correction itself improved.\n"
                 "- If firings recur around the same region of parameter space, "
                 "treat that as a sign that region is unsafe and steer away from it.\n"
             )
@@ -953,25 +959,73 @@ SUMMARY:"""
             return "N/A"
         return f"{reward:,.2f}"
 
-    def _format_guardrail_note(self, fires, acted) -> str:
+    @staticmethod
+    def _format_knob_value(knob: str, value) -> str:
+        if knob.endswith("_ns") and isinstance(value, (int, float)):
+            return f"{value / 1e6:g}ms"
+        return str(value)
+
+    def _format_guardrail_moves(self, moves) -> str:
+        """Which way a Repair took each knob, e.g. "base_slice_ns 3ms -> 0.5ms
+        (lower)". A knob it probed and put back is named after the ones it
+        changed, as unchanged."""
+        changed, unchanged = [], []
+        for knob, move in (moves or {}).items():
+            was, now = move.get("from"), move.get("to")
+            if was == now:
+                unchanged.append(f"{knob} unchanged at {self._format_knob_value(knob, now)}")
+                continue
+            part = (f"{knob} {self._format_knob_value(knob, was)} -> "
+                    f"{self._format_knob_value(knob, now)}")
+            if isinstance(was, (int, float)) and isinstance(now, (int, float)):
+                part += " (lower)" if now < was else " (higher)"
+            changed.append(part)
+        return ", ".join(changed + unchanged)
+
+    def _format_guardrail_note(self, fires, acted, metrics=None) -> str:
         """Inline history/Top-N tag for a trial a guardrail fired during.
 
         Deliberately distinct from the constraint-violated tag: a guardrail
         firing doesn't distort the reward (unlike the constraint path's 10x
-        penalty in optimizer.py) -- it just means the measurement is a mix of
-        the proposed configuration and a corrective restore, not a rejection.
+        penalty in optimizer.py) -- it means the measurement is a mix of the
+        proposed configuration and a correction, and where a Repair stepped
+        the knobs, the tag says which way: that direction is the guardrail's
+        own measurement of what the proposed setting got wrong.
         """
         if not acted:
             return ""
-        return f" [GUARDRAIL FIRED x{fires}: config partially overridden]"
+        metrics = metrics or {}
+        moved = self._format_guardrail_moves(metrics.get("guardrail_moves"))
+        if not moved:
+            return f" [GUARDRAIL FIRED x{fires}: config partially overridden]"
+        ticks = metrics.get("guardrail_ticks")
+        failed = (f"check failed {metrics.get('guardrail_violations', 0)}/{ticks} ticks; "
+                  if ticks else "")
+        return f" [GUARDRAIL FIRED x{fires}: {failed}knobs: {moved}]"
 
-    def _format_guardrail_block(self, fires, acted) -> str:
+    def _format_guardrail_block(self, fires, acted, metrics=None) -> str:
         """Current-iteration guardrail status, parallel to constraint_block."""
         if not acted:
             return ""
-        return (f"Guardrail status: fired {fires}x this window - the applied "
-                f"parameters were partially overridden by a corrective restore, "
-                f"so this reward may not reflect your proposed configuration alone.\n")
+        metrics = metrics or {}
+        moved = self._format_guardrail_moves(metrics.get("guardrail_moves"))
+        if not moved:
+            return (f"Guardrail status: fired {fires}x this window - the applied "
+                    f"parameters were partially overridden by a corrective restore, "
+                    f"so this reward may not reflect your proposed configuration alone.\n")
+        ticks = metrics.get("guardrail_ticks")
+        failed = (f"its check failed on {metrics.get('guardrail_violations', 0)} "
+                  f"of {ticks} ticks this window under your parameters, so it "
+                  if ticks else "it ")
+        held = metrics.get("guardrail_held_at_end")
+        after = {True: " Its check held again by the end of the window.",
+                 False: " Its check was still failing at the end of the window."}.get(held, "")
+        return (f"Guardrail status: {failed}stepped the knobs itself {fires}x: "
+                f"{moved}.{after} The direction it moved a knob is the direction "
+                f"that improved what it measures; for each knob it changed, your "
+                f"proposed value erred the other way. This reward mixes your configuration with the "
+                f"correction, so it likely scores better than your parameters "
+                f"alone would have.\n")
 
     def _format_history_entry(self, entry: Dict[str, Any], show_additional_metrics: bool = True) -> str:
         """Format a single history entry with details and auto-detected agent tag."""
@@ -1043,7 +1097,8 @@ SUMMARY:"""
         # writes; fall back to the nested copy for a single-loop-shaped entry.
         entry_guardrail_acted = entry.get('guardrail_acted', entry.get('metrics', {}).get('guardrail_acted'))
         guardrail_note = self._format_guardrail_note(
-            entry.get('metrics', {}).get('guardrail_fires'), entry_guardrail_acted)
+            entry.get('metrics', {}).get('guardrail_fires'), entry_guardrail_acted,
+            entry.get('metrics'))
 
         # Convergence tag
         convergence_note = ""
@@ -1186,7 +1241,8 @@ SUMMARY:"""
         # Guardrail status for CURRENT iteration, parallel to constraint_block.
         guardrail_block = self._format_guardrail_block(
             metrics.extra_metrics.get('guardrail_fires'),
-            metrics.extra_metrics.get('guardrail_acted'))
+            metrics.extra_metrics.get('guardrail_acted'),
+            metrics.extra_metrics)
 
         # Aggregation interval info
         aggregation_info = ""
@@ -1321,7 +1377,8 @@ SUMMARY:"""
         # Guardrail status for CURRENT iteration, parallel to constraint_block.
         guardrail_block = self._format_guardrail_block(
             metrics.extra_metrics.get('guardrail_fires'),
-            metrics.extra_metrics.get('guardrail_acted'))
+            metrics.extra_metrics.get('guardrail_acted'),
+            metrics.extra_metrics)
 
         # Parameter ranges as short bullets
         param_ranges_lines = []
@@ -1490,7 +1547,8 @@ Valid parameter ranges:
                     details = e.get('constraint_detail', '')
                     constraint_note = f" [{c_metric}={details} CONSTRAINT VIOLATED]"
                 guardrail_note = self._format_guardrail_note(
-                    e.get('metrics', {}).get('guardrail_fires'), e.get('metrics', {}).get('guardrail_acted'))
+                    e.get('metrics', {}).get('guardrail_fires'), e.get('metrics', {}).get('guardrail_acted'),
+                    e.get('metrics'))
 
                 line = (f"  * iter {e['iteration']}: {metric}={e['reward']:,.2f} "
                         f"with {self._short_params_for_history(e['params'])}{constraint_note}{guardrail_note}")
@@ -1508,7 +1566,8 @@ Valid parameter ranges:
                 details = e.get('constraint_detail', '')
                 constraint_note = f" [{c_metric}={details} CONSTRAINT VIOLATED]"
             guardrail_note = self._format_guardrail_note(
-                e.get('metrics', {}).get('guardrail_fires'), e.get('metrics', {}).get('guardrail_acted'))
+                e.get('metrics', {}).get('guardrail_fires'), e.get('metrics', {}).get('guardrail_acted'),
+                e.get('metrics'))
 
             # Determine if we should show additional metrics for this entry
             is_last = (idx == len(recent) - 1)
@@ -1618,7 +1677,8 @@ Valid parameter ranges:
             params_str = self._short_params_for_history(e['parameters'] if 'parameters' in e else e.get('params', {}))
             guardrail_note = self._format_guardrail_note(
                 e.get('metrics', {}).get('guardrail_fires'),
-                e.get('guardrail_acted', e.get('metrics', {}).get('guardrail_acted')))
+                e.get('guardrail_acted', e.get('metrics', {}).get('guardrail_acted')),
+                e.get('metrics'))
             lines.append(f"{i}. Iter {e['iteration']}: {params_str} -> {metric}={reward_str}{guardrail_note}")
             
         return "\n".join(lines) + "\n"

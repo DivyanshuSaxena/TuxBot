@@ -16,6 +16,7 @@ import os
 import logging
 import threading
 import json
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -683,6 +684,18 @@ sleep 1 &&
     # pid.
     _GUARDRAIL_ACTION = "[SET] tuxbot_knobs"
     _GUARDRAIL_REPAIR = ("[REPAIR] ", " := ")
+    # One knob's step: `[REPAIR] base_slice_ns := 500000 (was 1000000, ...)`.
+    _GUARDRAIL_STEP = re.compile(rb"^\[REPAIR\] (\w+) := (\S+) \(was ([^,)]+)")
+
+    @staticmethod
+    def _knob_value(raw: bytes) -> Any:
+        text = raw.decode(errors="replace")
+        for cast in (int, float):
+            try:
+                return cast(text)
+            except ValueError:
+                pass
+        return text
 
     @classmethod
     def _is_guardrail_action(cls, line: bytes) -> bool:
@@ -713,11 +726,17 @@ sleep 1 &&
         steps, probes, settles and holds -- and `guardrail_violated_frac` is
         the share of evaluated ticks whose check failed; together they say
         whether a Repair kept trying without the check coming back.
+        `guardrail_moves` is where the steps took each knob, from the value in
+        effect before its first step to the one after its last, and
+        `guardrail_held_at_end` the verdict of the window's last evaluated
+        tick: together they tell the tuner which way its setting failed.
         """
         start = getattr(self, "_guardrail_window_start", None)
         if not start:
             return {}
         fires = repairs = held = violated = 0
+        last_holds = None
+        moves: Dict[str, Dict[str, Any]] = {}
         for path, offset in start.items():
             try:
                 with open(path, "rb") as f:
@@ -731,11 +750,20 @@ sleep 1 &&
                             fires += 1
                         if line.startswith(b"[REPAIR] "):
                             repairs += 1
+                            step = self._GUARDRAIL_STEP.match(line)
+                            if step:
+                                move = moves.setdefault(step.group(1).decode(), {
+                                    "from": self._knob_value(step.group(3)),
+                                    "steps": 0})
+                                move["to"] = self._knob_value(step.group(2))
+                                move["steps"] += 1
                         elif line.startswith(b"[obs] "):
                             if b'"holds": false' in line:
                                 violated += 1
+                                last_holds = False
                             elif b'"holds": true' in line:
                                 held += 1
+                                last_holds = True
             except OSError:
                 continue
         ticks = held + violated
@@ -743,7 +771,9 @@ sleep 1 &&
                 "guardrail_repair_lines": repairs,
                 "guardrail_ticks": ticks,
                 "guardrail_violations": violated,
-                "guardrail_violated_frac": violated / ticks if ticks else 0.0}
+                "guardrail_violated_frac": violated / ticks if ticks else 0.0,
+                "guardrail_moves": moves,
+                "guardrail_held_at_end": last_holds}
 
     def _read_rapl_socket_energy(self, socket: int = 0) -> Optional[int]:
         """Read RAPL energy for a specific socket (package).

@@ -128,6 +128,59 @@ def test_counts_repair_attempts_and_violated_ticks(bench):
     assert delta["guardrail_violated_frac"] == 0.75
 
 
+def test_records_which_way_a_repair_moved_each_knob(bench):
+    """From the value before a knob's first step to the one after its last; a
+    knob probed and put back reads as unmoved."""
+    b, log = bench
+    b._guardrail_window_start = b._read_guardrail_logs()
+    with open(log, "a") as f:
+        f.write('[obs] {"in_scope": true, "holds": false}\n')
+        f.write("[REPAIR] (busy_poll, base_slice_ns): rx_wait_q95=1.35157e+07 at (0, 3000000); probing its neighbours\n")
+        f.write("[REPAIR] busy_poll := 10 (was 0, rx_wait_q95=1.35157e+07 at (0, 3000000))\n")
+        f.write("[REPAIR] busy_poll := 0 (was 10, rx_wait_q95=1.35157e+07 at (0, 3000000))\n")
+        f.write("[REPAIR] base_slice_ns := 1000000 (was 3000000, rx_wait_q95=1.35157e+07 at (0, 3000000))\n")
+        f.write("[REPAIR] base_slice_ns := 500000 (was 1000000, rx_wait_q95=8.88067e+06 at (0, 1000000))\n")
+        f.write('[obs] {"in_scope": true, "holds": true}\n')
+    delta = b._guardrail_window_delta()
+    assert delta["guardrail_moves"] == {
+        "busy_poll": {"from": 0, "to": 0, "steps": 2},
+        "base_slice_ns": {"from": 3000000, "to": 500000, "steps": 2}}
+    assert delta["guardrail_held_at_end"] is True
+
+
+def test_an_off_ladder_snap_is_a_move(bench):
+    b, log = bench
+    b._guardrail_window_start = b._read_guardrail_logs()
+    with open(log, "a") as f:
+        f.write("[REPAIR] busy_poll := 100 (was 82, off its ladder)\n")
+        f.write('[obs] {"in_scope": true, "holds": false}\n')
+    delta = b._guardrail_window_delta()
+    assert delta["guardrail_moves"] == {"busy_poll": {"from": 82, "to": 100, "steps": 1}}
+    assert delta["guardrail_held_at_end"] is False
+
+
+def test_the_prompt_says_which_way_the_guardrail_moved():
+    from barebones_optimizer.tuners.llm import LLMTuner
+
+    t = LLMTuner.__new__(LLMTuner)
+    metrics = {"guardrail_fires": 3, "guardrail_acted": True,
+               "guardrail_ticks": 15, "guardrail_violations": 12,
+               "guardrail_held_at_end": True,
+               "guardrail_moves": {
+                   "busy_poll": {"from": 0, "to": 0, "steps": 2},
+                   "base_slice_ns": {"from": 3000000, "to": 500000, "steps": 2}}}
+    note = t._format_guardrail_note(3, True, metrics)
+    assert "check failed 12/15 ticks" in note
+    assert "base_slice_ns 3ms -> 0.5ms (lower)" in note
+    assert "busy_poll unchanged at 0" in note
+    block = t._format_guardrail_block(3, True, metrics)
+    assert "base_slice_ns 3ms -> 0.5ms (lower)" in block
+    assert "held again" in block
+    # A restore names no knob, so it keeps the override wording.
+    assert "partially overridden" in t._format_guardrail_note(1, True, {})
+    assert t._format_guardrail_block(0, False, metrics) == ""
+
+
 def test_no_guardrail_configured_reports_nothing(tmp_path, monkeypatch):
     """The unguarded arm, not an error."""
     monkeypatch.delenv("GDL_GUARDRAIL_LOGS", raising=False)
